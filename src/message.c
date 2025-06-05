@@ -6,14 +6,7 @@
 
 #include "common.h"
 
-#define INIT_PARSER(msg, signature)                                            \
-  ((Parser) {                                                                  \
-      (msg),                                                                   \
-      (signature),                                                             \
-      (signature),                                                             \
-  })
-
-#define MESSAGE_PEEK(msg, type, contents) \
+#define MESSAGE_PEEK(msg, type, contents)                                      \
   CALL_SD_BUS_FUNC(sd_bus_message_peek_type, (msg), (type), (contents))
 
 #define DBUS_TO_JANET_NUM(janet_type, c_type, dbus_type)                       \
@@ -30,18 +23,24 @@
     return janet_cstringv(x);                                                  \
   } while (0)
 
+// State struct when parsing signatures and appending data
 typedef struct {
   sd_bus_message *msg;
-  const char *signature;
   const char *cursor;
 } Parser;
 
-int gc_sdbus_message(void *, size_t);
-const JanetAbstractType dbus_message_type = { .name = "sdbus/message",
-                                              .gc = gc_sdbus_message,
-                                              JANET_ATEND_GC };
+// -------------------------------------------------------------------
+// D-Bus message abstract type
+// -------------------------------------------------------------------
 
-int gc_sdbus_message(void *data, size_t len) {
+static int gc_sdbus_message(void *, size_t);
+const JanetAbstractType dbus_message_type = {
+  .name = "sdbus/message",
+  .gc = gc_sdbus_message,
+  JANET_ATEND_GC
+};
+
+static int gc_sdbus_message(void *data, size_t len) {
   UNUSED(len);
 
   sd_bus_message_unrefp((sd_bus_message **) data);
@@ -50,118 +49,34 @@ int gc_sdbus_message(void *data, size_t len) {
   return 0;
 }
 
-JANET_FN(cfun_message_unref, "(sdbus/message-unref msg)",
-         "Deallocate a D-Bus message.") {
-  janet_fixarity(argc, 1);
-  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
-
-  sd_bus_message_unrefp(msg_ptr);
-  *msg_ptr = NULL;
-
-  return janet_wrap_nil();
-}
-
-JANET_FN(
-    cfun_message_new_method_call,
-    "(sdbus/message-new-method-call bus destination path interface member)",
-    "Create a new D-Bus method call message.") {
-  janet_fixarity(argc, 5);
-
-  sd_bus_message *msg = NULL;
-
-  sd_bus **bus_ptr = janet_getabstract(argv, 0, &dbus_bus_type);
-  const char *destination = janet_getcstring(argv, 1);
-  const char *path = janet_getcstring(argv, 2);
-  const char *interface = janet_getcstring(argv, 3);
-  const char *member = janet_getcstring(argv, 4);
-
-  int rv = sd_bus_message_new_method_call(*bus_ptr, &msg, destination, path,
-                                          interface, member);
-  if (rv < 0) {
-    sd_bus_message_unref(msg);
-    janet_panicf("failed to create message: %s", strerror(-rv));
-  }
-
-  sd_bus_message **msg_ptr = (sd_bus_message **) janet_abstract(
-      &dbus_message_type, sizeof(sd_bus_message *));
-  *msg_ptr = msg;
-
-  return janet_wrap_abstract(msg_ptr);
-}
-
-JANET_FN(cfun_message_seal, "(sdbus/message-seal)", "Seal a message") {
-  janet_fixarity(argc, 1);
-
-  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
-
-  CALL_SD_BUS_FUNC(sd_bus_message_seal, *msg_ptr, 0, 0);
-  return janet_wrap_nil();
-}
-
-bool is_basic_type(int ch) {
+static inline bool is_basic_type(int ch) {
+  // TODO: byte and file descriptor types
   return strchr("bnqiuxtdsog", ch) != NULL;
 }
 
-int peek(Parser *p) {
-  return (p->cursor && *p->cursor) ? *(p->cursor + 1) : -1;
+// -------------------------------------------------------------------
+// Utility functions for parsing signatures and appending data
+// -------------------------------------------------------------------
+
+static inline int skip(Parser *p, size_t skip) {
+  p->cursor += skip;
+  return *p->cursor;
 }
 
-int next(Parser *p) {
-  return (p->cursor && *p->cursor) ? *++p->cursor : -1;
+static inline int next(Parser *p) {
+  return *(++p->cursor);
 }
 
-int cursor(Parser *p) {
-  return (p->cursor) ? *p->cursor : -1;
+static inline int peek(Parser *p) {
+  return *(p->cursor + 1);
 }
 
-void reset(Parser *p) {
-  p->cursor = p->signature;
+static inline int cursor(Parser *p) {
+  return *p->cursor;
 }
 
-void append_complete_type(Parser *, Janet);
-void append_data(sd_bus_message *, const char *, Janet *, int32_t);
-void append_basic_type(Parser *, Janet);
-void append_variant_type(Parser *, Janet);
-void append_struct_type(Parser *, Janet);
-void append_array_type(Parser *, Janet);
-void append_dict_type(Parser *, Janet);
-
-JANET_FN(cfun_message_append, "(sdbus/message-append msg signature & args)",
-         "Append arguments to a D-Bus message.") {
-  janet_arity(argc, 3, -1);
-
-  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
-  const char *signature = janet_getcstring(argv, 1);
-
-  append_data(*msg_ptr, signature, argv + 2, argc - 2);
-
-  return janet_wrap_nil();
-}
-
-void append_data(sd_bus_message *msg, const char *signature, Janet *args,
-                 int32_t n) {
-  Parser p = INIT_PARSER(msg, signature);
-  for (int32_t i = 0; i < n; i++) {
-    append_complete_type(&p, args[i]);
-    next(&p);
-  }
-}
-
-void append_complete_type(Parser *p, Janet arg) {
-  int ch = cursor(p);
-  if (is_basic_type(ch))
-    append_basic_type(p, arg);
-  else if (ch == 'v')
-    append_variant_type(p, arg);
-  else if (ch == '(')
-    append_struct_type(p, arg);
-  else if (ch == 'a')
-    append_array_type(p, arg);
-  else
-    janet_panicf("Unsupported argument type: %c", ch);
-}
-
-size_t match(const char *str, int open, int close) {
+// Returns offset of matching 'close' character in str
+static size_t match(const char *str, int open, int close) {
   int depth = 1;
   size_t length = 0;
 
@@ -180,28 +95,73 @@ size_t match(const char *str, int open, int close) {
   janet_panicf("Unmatched %c in signature", open);
 }
 
-size_t find_complete_type(const char *signature) {
+// Returns offset to the start of the first complete type or
+// dictionary entry in signature. Used to find the member type for
+// arrays.
+static size_t find_subtype(const char *signature) {
   int ch;
   if (!(ch = *signature))
     janet_panicf("Missing array signature");
 
   if (ch == 'a')
-    return 1 + find_complete_type(signature + 1);
+    return 1 + find_subtype(signature + 1);
   else if (ch == '{')
     return match(signature, '{', '}');
   else if (ch == '(')
     return match(signature, '(', ')');
   else
-    return 1;
+    return 0;
 }
 
-void append_dict_type(Parser *p, Janet arg) {
+// -------------------------------------------------------------------
+// Functions appending Janet data to a D-Bus message
+// -------------------------------------------------------------------
+
+static void append_complete_type(Parser *, Janet);
+static void append_basic_type(Parser *, Janet);
+static void append_variant_type(Parser *, Janet);
+static void append_struct_type(Parser *, Janet);
+static void append_array_type(Parser *, Janet);
+static void append_dict_type(Parser *, Janet);
+
+static void append_data(sd_bus_message *msg, const char *signature, Janet *args, int32_t n) {
+  Parser p = { msg, signature };
+  for (int32_t i = 0; i < n; i++) {
+    if (!cursor(&p))
+      janet_panicf("Excessive arguments for signature: %s", signature);
+
+    append_complete_type(&p, args[i]);
+    next(&p);
+  }
+
+  if (cursor(&p))
+    janet_panicf("Arguments missing for signature: %s", signature);
+}
+
+static void append_complete_type(Parser *p, Janet arg) {
+  int ch = cursor(p);
+  if (is_basic_type(ch))
+    append_basic_type(p, arg);
+  else if (ch == 'v')
+    append_variant_type(p, arg);
+  else if (ch == '(')
+    append_struct_type(p, arg);
+  else if (ch == 'a')
+    append_array_type(p, arg);
+  else
+    janet_panicf("Unsupported argument type: %c", ch);
+}
+
+static void append_dict_type(Parser *p, Janet arg) {
   size_t end;
   if ((end = match(p->cursor, '{', '}')) < 3)
     janet_panicf("Incomplete dictionary signature: %s", p->cursor);
 
+  // Opening/closing braces must be included for sd_bus_message_open_container
   char *dict_sig = janet_scalloc(end + 2, sizeof(char));
   memcpy(dict_sig, p->cursor, end + 1);
+
+  skip(p, end);
 
   if (!is_basic_type(*(dict_sig + 1)))
     janet_panicf("Dict signature key must be a basic type: %s", dict_sig);
@@ -214,9 +174,9 @@ void append_dict_type(Parser *p, Janet arg) {
 
   JanetTable *tbl = janet_gettable(&arg, 0);
   if (tbl->count == 0)
-    janet_panic("Missing arguments");
+    janet_panic("Empty table: missing dictionary arguments");
 
-  Parser dict_parser = INIT_PARSER(p->msg, dict_sig);
+  Parser dict_parser = { p->msg, dict_sig };
   for (int32_t i = 0; i < tbl->count; i++) {
     CALL_SD_BUS_FUNC(sd_bus_message_open_container, p->msg,
                      SD_BUS_TYPE_DICT_ENTRY, dict_sig);
@@ -228,7 +188,7 @@ void append_dict_type(Parser *p, Janet arg) {
     next(&dict_parser);
     append_complete_type(&dict_parser, tbl->data[i].value);
 
-    // Reset cursor back to 'key'
+    // Reset cursor back to 'key' type
     dict_parser.cursor = dict_sig;
 
     CALL_SD_BUS_FUNC(sd_bus_message_close_container, p->msg);
@@ -238,79 +198,87 @@ void append_dict_type(Parser *p, Janet arg) {
   janet_sfree(dict_sig);
 }
 
-void append_array_type(Parser *p, Janet arg) {
-  if (*(p->cursor + 1) == '{') {
-    p->cursor++;
+static void append_array_type(Parser *p, Janet arg) {
+  if (peek(p) == '{') {
+    next(p);
     return append_dict_type(p, arg);
   }
 
-  JanetArray *array = janet_getarray(&arg, 0);
-
-  size_t end = find_complete_type(p->cursor);
+  size_t end = find_subtype(p->cursor);
   char *array_sig = janet_scalloc(end + 1, sizeof(char));
   memcpy(array_sig, p->cursor + 1, end);
 
-  p->cursor += end;
+  skip(p, end);
 
   CALL_SD_BUS_FUNC(sd_bus_message_open_container, p->msg, SD_BUS_TYPE_ARRAY,
                    array_sig);
 
-  Parser array_parser = INIT_PARSER(p->msg, array_sig);
+  JanetArray *array = janet_getarray(&arg, 0);
+  if (array->count == 0)
+    janet_panic("Empty array: missing array arguments");
+
+  Parser array_parser = { p->msg, array_sig };
   for (int32_t i = 0; i < array->count; i++) {
     append_complete_type(&array_parser, array->data[i]);
 
     // Reset - container types may move our cursor
-    array_parser.cursor = array_parser.signature;
+    array_parser.cursor = array_sig;
   }
 
   CALL_SD_BUS_FUNC(sd_bus_message_close_container, p->msg);
   janet_sfree(array_sig);
 }
 
-void append_struct_type(Parser *p, Janet arg) {
-  const Janet *tuple = janet_gettuple(&arg, 0);
-  int32_t length = janet_tuple_length(tuple);
-
+static void append_struct_type(Parser *p, Janet arg) {
   size_t end = 0;
   if ((end = match(p->cursor, '(', ')')) < 2)
     janet_panicf("Missing struct signature contents: %s", p->cursor);
 
-  char *struct_sig = janet_scalloc(end - 1, sizeof(char));
+  // Exclude opening/closing parentheses
+  char *struct_sig = janet_scalloc(end, sizeof(char));
   memcpy(struct_sig, p->cursor + 1, end - 1);
 
-  p->cursor += end;
+  skip(p, end);
 
   CALL_SD_BUS_FUNC(sd_bus_message_open_container, p->msg, SD_BUS_TYPE_STRUCT, struct_sig);
 
-  Parser struct_parser = INIT_PARSER(p->msg, struct_sig);
+  const Janet *tuple = janet_gettuple(&arg, 0);
+  int32_t length;
+  if ((length = janet_tuple_length(tuple)) == 0)
+    janet_panic("Empty tuple: missing struct arguments");
+
+  Parser struct_parser = { p->msg, struct_sig };
   for (int32_t i = 0; i < length; i++) {
-    if (!*struct_parser.cursor)
-      janet_panic("Mismatched lengths in struct signature and arguments");
+    if (!cursor(&struct_parser))
+      janet_panicf("Excessive arguments for struct signature: %s", struct_sig);
 
     append_complete_type(&struct_parser, tuple[i]);
     next(&struct_parser);
   }
 
+  if (cursor(&struct_parser))
+    janet_panicf("Arguments missing for struct signature: %s", struct_sig);
+
   CALL_SD_BUS_FUNC(sd_bus_message_close_container, p->msg);
+  janet_sfree(struct_sig);
 }
 
-void append_variant_type(Parser *p, Janet arg) {
+static void append_variant_type(Parser *p, Janet arg) {
   const Janet *tuple = janet_gettuple(&arg, 0);
   if (janet_tuple_length(tuple) != 2)
     janet_panicf("Variant type expects exactly 2 arguments");
 
-  const char *variant_signature = janet_getcstring(tuple, 0);
+  const char *variant_sig = janet_getcstring(tuple, 0);
   const Janet variant_arg = tuple[1];
-
-  Parser variant_parser = INIT_PARSER(p->msg, variant_signature);
+  Parser variant_parser = { p->msg, variant_sig };
 
   CALL_SD_BUS_FUNC(sd_bus_message_open_container, p->msg, SD_BUS_TYPE_VARIANT,
-                   variant_signature);
+                   variant_sig);
   append_complete_type(&variant_parser, variant_arg);
   CALL_SD_BUS_FUNC(sd_bus_message_close_container, p->msg);
 }
 
-void append_basic_type(Parser *p, Janet arg) {
+static void append_basic_type(Parser *p, Janet arg) {
   switch (cursor(p)) {
     case 'b': // boolean
       CALL_SD_BUS_FUNC(sd_bus_message_append, p->msg, "b",
@@ -353,139 +321,111 @@ void append_basic_type(Parser *p, Janet arg) {
   }
 }
 
-Janet read_complete_type(sd_bus_message *, char, const char *);
-Janet read_basic_type(sd_bus_message *, char);
-Janet read_variant_type(sd_bus_message *, const char *);
-Janet read_struct_type(sd_bus_message *, const char *);
-Janet read_array_type(sd_bus_message *, const char *);
-Janet read_dict_type(sd_bus_message *, const char *);
+// -------------------------------------------------------------------
+// Functions converting D-Bus message content to Janet types
+// -------------------------------------------------------------------
 
-JANET_FN(cfun_message_read, "(sdbus/message-read msg &opt what)",
-         "Read a single complete type from a D-Bus message") {
-  janet_fixarity(argc, 1);
+static Janet read_basic_type(sd_bus_message *, char);
+static Janet read_variant_type(sd_bus_message *, const char *);
+static Janet read_struct_type(sd_bus_message *, const char *);
+static Janet read_array_type(sd_bus_message *, const char *);
+static Janet read_dict_type(sd_bus_message *, const char *);
 
-  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
-  char type;
-  const char *contents = NULL;
+// Returns 1 on success, 0 on end of message
+static int read_complete_type(sd_bus_message *msg, Janet *obj) {
+  char type;                    // Next type in message
+  const char *signature = NULL; // Signature of contents if container
 
-  // Follow file/read and return nil on eof
-  if (MESSAGE_PEEK(*msg_ptr, &type, &contents) == 0)
-    return janet_wrap_nil();
+  if (MESSAGE_PEEK(msg, &type, &signature) == 0)
+    return 0;
 
-  return read_complete_type(*msg_ptr, type, contents);
-}
-
-JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
-         "Read all contents of a D-Bus message and return them as a tuple.") {
-  janet_fixarity(argc, 1);
-
-  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
-  char type;
-  const char *contents = NULL;
-
-  JanetArray *array = janet_array(1);
-  while (MESSAGE_PEEK(*msg_ptr, &type, &contents) > 0)
-    janet_array_push(array, read_complete_type(*msg_ptr, type, contents));
-
-  return janet_wrap_array(array);
-}
-
-Janet read_complete_type(sd_bus_message *msg, char type, const char *contents) {
   if (is_basic_type(type))
-    return read_basic_type(msg, type);
+    *obj = read_basic_type(msg, type);
   else if (type == SD_BUS_TYPE_VARIANT)
-    return read_variant_type(msg, contents);
+    *obj = read_variant_type(msg, signature);
   else if (type == SD_BUS_TYPE_STRUCT)
-    return read_struct_type(msg, contents);
-  else if (type == 'a' && *contents == '{')
-    return read_dict_type(msg, contents);
+    *obj = read_struct_type(msg, signature);
+  else if (type == 'a' && *signature == '{')
+    *obj = read_dict_type(msg, signature);
   else if (type == 'a')
-    return read_array_type(msg, contents);
+    *obj = read_array_type(msg, signature);
   else
     janet_panicf("Unsupported message type: %c", type);
+
+  return 1;
 }
 
-Janet read_variant_type(sd_bus_message *msg, const char *contents) {
-  char type;
-  const char *subcontents = NULL;
-
+static Janet read_variant_type(sd_bus_message *msg, const char *signature) {
   CALL_SD_BUS_FUNC(sd_bus_message_enter_container, msg, SD_BUS_TYPE_VARIANT,
-                   contents);
-  if (MESSAGE_PEEK(msg, &type, &subcontents) == 0)
-    janet_panicf("Unexpected end of variant type");
+                   signature);
 
-  Janet obj = read_complete_type(msg, type, subcontents);
+  Janet obj;
+  if (read_complete_type(msg, &obj) == 0)
+    janet_panic("Unexpected end of variant type");
+
   CALL_SD_BUS_FUNC(sd_bus_message_exit_container, msg);
 
-  Janet sig = janet_cstringv(contents);
-  JanetTuple tuple = janet_tuple_n((const Janet[]) { sig, obj }, 2);
+  JanetTuple tuple = janet_tuple_n((const Janet[]) { janet_cstringv(signature), obj }, 2);
 
   return janet_wrap_tuple(tuple);
 }
 
-Janet read_struct_type(sd_bus_message *msg, const char *contents) {
+static Janet read_struct_type(sd_bus_message *msg, const char *signature) {
   JanetArray *array = janet_array(1);
-  char type;
-  const char *subcontents = NULL;
 
   CALL_SD_BUS_FUNC(sd_bus_message_enter_container, msg, SD_BUS_TYPE_STRUCT,
-                   contents);
+                   signature);
 
-  while (MESSAGE_PEEK(msg, &type, &subcontents) > 0) {
-    Janet obj = read_complete_type(msg, type, subcontents);
+  Janet obj;
+  while (read_complete_type(msg, &obj) > 0)
     janet_array_push(array, obj);
-  }
 
   CALL_SD_BUS_FUNC(sd_bus_message_exit_container, msg);
-
   return janet_wrap_tuple(janet_tuple_n(array->data, array->count));
 }
 
-Janet read_dict_type(sd_bus_message *msg, const char *contents) {
+static Janet read_dict_type(sd_bus_message *msg, const char *signature) {
   JanetTable *tbl = janet_table(1);
-  char type;
-  const char *subcontents = NULL;
 
   CALL_SD_BUS_FUNC(sd_bus_message_enter_container, msg, SD_BUS_TYPE_ARRAY,
-                   contents);
+                   signature);
 
-  while (MESSAGE_PEEK(msg, &type, &subcontents) > 0) {
-    CALL_SD_BUS_FUNC(sd_bus_message_enter_container, msg,
-                     SD_BUS_TYPE_DICT_ENTRY, subcontents);
-    Janet key = read_basic_type(msg, subcontents[0]);
+  char type;
+  const char *dict_sig = NULL;
+  while (MESSAGE_PEEK(msg, &type, &dict_sig) > 0) {
+    CALL_SD_BUS_FUNC(sd_bus_message_enter_container, msg, SD_BUS_TYPE_DICT_ENTRY, dict_sig);
 
-    MESSAGE_PEEK(msg, &type, &subcontents);
-    Janet value = read_complete_type(msg, type, subcontents);
+    Janet key = read_basic_type(msg, dict_sig[0]);
+    Janet value;
+    if (read_complete_type(msg, &value) == 0)
+      janet_panic("Unexpected end of dictionary type");
+
+    janet_table_put(tbl, key, value);
 
     CALL_SD_BUS_FUNC(sd_bus_message_exit_container, msg);
-    janet_table_put(tbl, key, value);
   }
 
   CALL_SD_BUS_FUNC(sd_bus_message_exit_container, msg);
   return janet_wrap_table(tbl);
 }
 
-Janet read_array_type(sd_bus_message *msg, const char *contents) {
+static Janet read_array_type(sd_bus_message *msg, const char *signature) {
   JanetArray *array = janet_array(1);
-  char type;
-  const char *subcontents = NULL;
 
   CALL_SD_BUS_FUNC(sd_bus_message_enter_container, msg, SD_BUS_TYPE_ARRAY,
-                   contents);
+                   signature);
 
-  while (MESSAGE_PEEK(msg, &type, &subcontents) > 0) {
-    Janet obj = read_complete_type(msg, type, subcontents);
+  Janet obj;
+  while (read_complete_type(msg, &obj) > 0)
     janet_array_push(array, obj);
-  }
 
   CALL_SD_BUS_FUNC(sd_bus_message_exit_container, msg);
-
   return janet_wrap_array(array);
 }
 
-Janet read_basic_type(sd_bus_message *msg, char type) {
+static Janet read_basic_type(sd_bus_message *msg, char type) {
   switch (type) {
-    case 'b': // Boolean
+    case 'b': // boolean
       DBUS_TO_JANET_NUM(boolean, int, 'b');
     case 'n': // int16_t
       DBUS_TO_JANET_NUM(number, int16_t, 'n');
@@ -501,14 +441,106 @@ Janet read_basic_type(sd_bus_message *msg, char type) {
       DBUS_TO_JANET_NUM(u64, uint64_t, 't');
     case 'd': // double
       DBUS_TO_JANET_NUM(number, double, 'd');
-    case 's':
+    case 's': // string
       DBUS_TO_JANET_STR('s');
-    case 'o':
+    case 'o': // object path
       DBUS_TO_JANET_STR('o');
-    case 'g':
+    case 'g': // signature
       DBUS_TO_JANET_STR('g');
   }
 
+  // Unreachable
+  janet_panic("Unsupported basic type");
+}
+
+// -------------------------------------------------------------------
+// Exported wrapper functions
+// -------------------------------------------------------------------
+
+JANET_FN(
+    cfun_message_new_method_call,
+    "(sdbus/message-new-method-call bus destination path interface member)",
+    "Create a new D-Bus method call message.") {
+  janet_fixarity(argc, 5);
+
+  sd_bus_message *msg = NULL;
+
+  sd_bus **bus_ptr = janet_getabstract(argv, 0, &dbus_bus_type);
+  const char *destination = janet_getcstring(argv, 1);
+  const char *path = janet_getcstring(argv, 2);
+  const char *interface = janet_getcstring(argv, 3);
+  const char *member = janet_getcstring(argv, 4);
+
+  int rv = sd_bus_message_new_method_call(*bus_ptr, &msg, destination, path,
+                                          interface, member);
+  if (rv < 0) {
+    sd_bus_message_unref(msg);
+    janet_panicf("failed to create message: %s", strerror(-rv));
+  }
+
+  sd_bus_message **msg_ptr = janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
+  *msg_ptr = msg;
+
+  return janet_wrap_abstract(msg_ptr);
+}
+
+JANET_FN(cfun_message_unref, "(sdbus/message-unref msg)",
+         "Deallocate a D-Bus message.") {
+  janet_fixarity(argc, 1);
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+
+  sd_bus_message_unrefp(msg_ptr);
+  *msg_ptr = NULL;
+
+  return janet_wrap_nil();
+}
+
+JANET_FN(cfun_message_append, "(sdbus/message-append msg signature & args)",
+         "Append arguments to a D-Bus message.") {
+  janet_arity(argc, 3, -1);
+
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+  const char *signature = janet_getcstring(argv, 1);
+
+  append_data(*msg_ptr, signature, argv + 2, argc - 2);
+
+  return janet_wrap_nil();
+}
+
+JANET_FN(cfun_message_read, "(sdbus/message-read msg &opt what)",
+         "Read a single complete type from a D-Bus message") {
+  janet_fixarity(argc, 1);
+
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+
+  // Follow Janet's file/read and return nil on eof
+  Janet obj;
+  if (read_complete_type(*msg_ptr, &obj) == 0)
+    return janet_wrap_nil();
+
+  return obj;
+}
+
+JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
+         "Read all contents of a D-Bus message and return them as a tuple.") {
+  janet_fixarity(argc, 1);
+
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+
+  JanetArray *array = janet_array(1);
+  Janet obj;
+  while (read_complete_type(*msg_ptr, &obj) > 0)
+    janet_array_push(array, obj);
+
+  return janet_wrap_array(array);
+}
+
+JANET_FN(cfun_message_seal, "(sdbus/message-seal)", "Seal a message") {
+  janet_fixarity(argc, 1);
+
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+
+  CALL_SD_BUS_FUNC(sd_bus_message_seal, *msg_ptr, 0, 0);
   return janet_wrap_nil();
 }
 
