@@ -72,6 +72,7 @@
 (assert (deep= (from-message "ab" @[true false]) @[true false]))
 (assert (deep= (from-message "a(si)" @[["Hello" 1] ["World" 2]]) @[["Hello" 1] ["World" 2]]))
 (assert (deep= (from-message "aad" @[@[0.1] @[0.2]]) @[@[0.1] @[0.2]]))
+(assert (deep= (from-message "aii" @[1 2] 3) @[@[1 2] 3]))
 (assert (deep= (from-message "v" ["as" @["Hello" "World"]]) ["as" @["Hello" "World"]]))
 
 (assert-error "Empty array" (from-message "a" @[]))
@@ -81,9 +82,14 @@
 (assert (deep= (from-message "a{is}" @{1 "val" 2 "val2"}) @{1 "val" 2 "val2"}))
 (assert (deep= (from-message "a{s(ii)}" @{"key" [1 2]}) @{"key" [1 2]}))
 (assert (deep= (from-message "aa{ii}" @[@{1 2}]) @[@{1 2}]))
+(assert (deep= (from-message "a{ii}ai" @{1 2} @[1 2]) @[@{1 2} @[1 2]]))
 
 (assert-error "Incomplete dictionary signature" (from-message "a{i}" @{}))
 (assert-error "Empty dictionary" (from-message "a{ii}" @{}))
 (assert-error "Variant as key" (from-message "a{vi}" @{["s" "key"] 1}))
+
+# Misc. checks
+(assert-error "Missing arguments" (from-message "ii" 1))
+(assert-error "Excessive arguments" (from-message "ii" 1 2 3))
 
 (end-suite)
