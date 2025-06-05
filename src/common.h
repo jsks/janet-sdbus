@@ -10,11 +10,12 @@
 #define UNUSED(x) do { (void)(x); } while (0)
 
 #define CALL_SD_BUS_FUNC(func, ...)                                            \
-  do {                                                                         \
+  ({                                                                           \
     int rv;                                                                    \
     if ((rv = func(__VA_ARGS__)) < 0)                                          \
       janet_panicf("failed to call %s: %s", #func, strerror(-rv));             \
-} while (0)
+    rv;                                                                        \
+  })
 
 // D-Bus connection functions
 extern const JanetAbstractType dbus_bus_type;
