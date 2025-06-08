@@ -37,5 +37,6 @@
   :lflags project-ldflags
   :headers ["src/common.h"]
   :source ["src/bus.c"
+           "src/error.c"
            "src/main.c"
            "src/message.c"])
