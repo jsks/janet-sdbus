@@ -1,0 +1,14 @@
+---
+BasedOnStyle: LLVM
+AlignArrayOfStructures: Left
+AlignConsecutiveAssignments:
+  Enabled: true
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Inline
+ColumnLimit: 80
+Cpp11BracedListStyle: false
+IndentCaseLabels: true
+KeepEmptyLinesAtTheStartOfBlocks: false
+PackConstructorInitializers: NextLineOnly
+SpaceAfterCStyleCast: true
+...
