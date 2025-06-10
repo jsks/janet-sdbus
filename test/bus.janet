@@ -1,5 +1,5 @@
 (use ../vendor/test)
-(import ../build/sdbus-native :as sdbus)
+(import sdbus/native :as sdbus)
 
 (start-suite)
 
@@ -19,7 +19,9 @@
 
 (assert (deep= names out))
 
-(:close bus)
+(sdbus/close-bus bus)
+
 (assert (not (sdbus/bus-is-open bus)))
+(assert-error "Bus is closed" (sdbus/list-names bus))
 
 (end-suite)

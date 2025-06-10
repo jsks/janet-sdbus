@@ -1,5 +1,5 @@
 (use ../vendor/test)
-(import ../build/sdbus-native :as sdbus)
+(import sdbus/native :as sdbus)
 
 (start-suite)
 
@@ -17,9 +17,7 @@
   (def msg (method-call-stub))
   (sdbus/message-append msg sig ;args)
   (sdbus/message-seal msg)
-  (if (> (length args) 1)
-    (sdbus/message-read-all msg)
-    (sdbus/message-read msg)))
+  (sdbus/message-read-all msg))
 
 # Append basic types
 (defmacro test-basic [dbus-type value janet-type]
