@@ -8,12 +8,13 @@
 // -------------------------------------------------------------------
 
 static int dbus_bus_gc(void *, size_t);
+static int dbus_bus_gcmark(void *, size_t);
 static int dbus_bus_get(void *, Janet, Janet *);
 static void dbus_bus_tostring(void *, JanetBuffer *);
 static Janet dbus_bus_next(void *, Janet);
 const JanetAbstractType dbus_bus_type = { .name      = "sdbus/bus",
                                           .gc        = dbus_bus_gc,
-                                          .gcmark    = NULL,
+                                          .gcmark    = dbus_bus_gcmark,
                                           .get       = dbus_bus_get,
                                           .put       = NULL,
                                           .marshal   = NULL,
@@ -33,10 +34,36 @@ static JanetMethod dbus_bus_methods[] = {
 static int dbus_bus_gc(void *p, size_t size) {
   UNUSED(size);
 
-  sd_bus_flush_close_unrefp((sd_bus **) p);
-  *((sd_bus **) p) = NULL;
+  Conn *conn = (Conn *) p;
+  sd_bus_flush_close_unref(conn->bus);
+
+  if (conn->stream)
+    janet_stream_close(conn->stream);
 
   return 0;
+}
+
+static int dbus_bus_gcmark(void *p, size_t size) {
+  UNUSED(size);
+
+  Conn *conn = (Conn *) p;
+  if (conn->stream)
+    janet_mark(janet_wrap_abstract(conn->stream));
+
+  if (conn->listener)
+    janet_mark(janet_wrap_fiber(conn->listener));
+
+  if (conn->queue)
+    janet_mark(janet_wrap_table(conn->queue));
+
+  return 0;
+}
+
+static void dbus_bus_tostring(void *p, JanetBuffer *buffer) {
+  const char *name = NULL;
+  CALL_SD_BUS_FUNC(sd_bus_get_unique_name, ((Conn *) p)->bus, &name);
+
+  janet_buffer_push_cstring(buffer, name);
 }
 
 static int dbus_bus_get(void *p, Janet key, Janet *out) {
@@ -52,13 +79,6 @@ static Janet dbus_bus_next(void *p, Janet key) {
   return janet_nextmethod(dbus_bus_methods, key);
 }
 
-static void dbus_bus_tostring(void *p, JanetBuffer *buffer) {
-  const char *name = NULL;
-  CALL_SD_BUS_FUNC(sd_bus_get_unique_name, *(sd_bus **) p, &name);
-
-  janet_buffer_push_cstring(buffer, name);
-}
-
 // -------------------------------------------------------------------
 // Exported wrapper functions
 // -------------------------------------------------------------------
@@ -68,10 +88,12 @@ JANET_FN(cfun_open_user_bus, "(sdbus/open-user-bus)",
   UNUSED(argv);
   janet_fixarity(argc, 0);
 
-  sd_bus **bus_ptr = janet_abstract(&dbus_bus_type, sizeof(sd_bus *));
-  CALL_SD_BUS_FUNC(sd_bus_open_user, bus_ptr);
+  Conn *conn = janet_abstract(&dbus_bus_type, sizeof(Conn));
+  memset(conn, 0, sizeof(Conn));
 
-  return janet_wrap_abstract(bus_ptr);
+  CALL_SD_BUS_FUNC(sd_bus_open_user, &conn->bus);
+
+  return janet_wrap_abstract(conn);
 }
 
 JANET_FN(cfun_open_system_bus, "(sdbus/open-system-bus)",
@@ -79,18 +101,26 @@ JANET_FN(cfun_open_system_bus, "(sdbus/open-system-bus)",
   UNUSED(argv);
   janet_fixarity(argc, 0);
 
-  sd_bus **bus_ptr = janet_abstract(&dbus_bus_type, sizeof(sd_bus *));
-  CALL_SD_BUS_FUNC(sd_bus_open_system, bus_ptr);
+  Conn *conn = janet_abstract(&dbus_bus_type, sizeof(Conn));
+  memset(conn, 0, sizeof(Conn));
 
-  return janet_wrap_abstract(bus_ptr);
+  CALL_SD_BUS_FUNC(sd_bus_open_system, &conn->bus);
+
+  return janet_wrap_abstract(conn);
 }
 
+// todo: documentation flushes outgoing, does not block for incoming
 JANET_FN(cfun_close_bus, "(sdbus/close-bus bus)", "Close a D-Bus connection.") {
   janet_fixarity(argc, 1);
 
-  sd_bus **bus_ptr = janet_getabstract(argv, 0, &dbus_bus_type);
-  sd_bus_flush(*bus_ptr);
-  sd_bus_close(*bus_ptr);
+  Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
+  sd_bus_flush(conn->bus);
+  sd_bus_close(conn->bus);
+
+  if (conn->stream) {
+    janet_stream_close(conn->stream);
+    conn->stream = NULL;
+  }
 
   return janet_wrap_nil();
 }
@@ -99,8 +129,8 @@ JANET_FN(cfun_bus_is_open, "(sdbus/bus-is-open bus)",
          "Check if a D-Bus connection is open.") {
   janet_fixarity(argc, 1);
 
-  sd_bus **bus_ptr = janet_getabstract(argv, 0, &dbus_bus_type);
-  int check        = CALL_SD_BUS_FUNC(sd_bus_is_open, *bus_ptr);
+  Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
+  int check  = CALL_SD_BUS_FUNC(sd_bus_is_open, conn->bus);
 
   return janet_wrap_boolean(check);
 }
@@ -109,10 +139,10 @@ JANET_FN(cfun_get_unique_name, "(sdbus/get-unique-name bus)",
          "Get the unique name of a D-Bus connection.") {
   janet_fixarity(argc, 1);
 
-  sd_bus **bus_ptr = janet_getabstract(argv, 0, &dbus_bus_type);
+  Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
 
   const char *name = NULL;
-  CALL_SD_BUS_FUNC(sd_bus_get_unique_name, *bus_ptr, &name);
+  CALL_SD_BUS_FUNC(sd_bus_get_unique_name, conn->bus, &name);
 
   return janet_cstringv(name);
 }
@@ -123,10 +153,11 @@ JANET_FN(
     "Set whether to allow interactive authorization on a D-Bus connection.") {
   janet_fixarity(argc, 2);
 
-  sd_bus **bus_ptr = janet_getabstract(argv, 0, &dbus_bus_type);
-  int allow        = janet_getboolean(argv, 1);
+  Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
+  int allow  = janet_getboolean(argv, 1);
 
-  CALL_SD_BUS_FUNC(sd_bus_set_allow_interactive_authorization, *bus_ptr, allow);
+  CALL_SD_BUS_FUNC(sd_bus_set_allow_interactive_authorization, conn->bus,
+                   allow);
 
   return janet_wrap_nil();
 }
@@ -135,10 +166,10 @@ JANET_FN(cfun_list_names, "(sdbus/list-names bus)",
          "List registered names on a D-Bus connection.") {
   janet_fixarity(argc, 1);
 
-  sd_bus **bus_ptr = janet_getabstract(argv, 0, &dbus_bus_type);
+  Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
 
   char **acquired = NULL;
-  CALL_SD_BUS_FUNC(sd_bus_list_names, *bus_ptr, &acquired, NULL);
+  CALL_SD_BUS_FUNC(sd_bus_list_names, conn->bus, &acquired, NULL);
 
   JanetArray *list = janet_array(1);
   for (char **p = acquired; *p; p++) {
@@ -153,37 +184,6 @@ JANET_FN(cfun_list_names, "(sdbus/list-names bus)",
   return janet_wrap_array(list);
 }
 
-JANET_FN(cfun_call, "(sdbus/call bus message)", "Call a D-Bus method.") {
-  janet_fixarity(argc, 2);
-
-  sd_bus **bus_ptr         = janet_getabstract(argv, 0, &dbus_bus_type);
-  sd_bus_message **msg_ptr = janet_getabstract(argv, 1, &dbus_message_type);
-
-  // Initialize via an abstract type so that Janet's GC can clean up
-  // on panic.
-  sd_bus_error *error = janet_abstract(&dbus_error_type, sizeof(sd_bus_error));
-  *error              = SD_BUS_ERROR_NULL;
-
-  sd_bus_message **reply =
-      janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
-
-  int rv = sd_bus_call(*bus_ptr, *msg_ptr, 0, error, reply);
-  if (rv < 0) {
-    if (sd_bus_error_get_errno(error)) {
-      const char *fmt = (error->message) ? "D-Bus method call failed: %s: %s"
-                                         : "D-Bus method call failed: %s";
-
-      JanetString str = janet_formatc(fmt, error->name, error->message);
-      sd_bus_error_free(error);
-      janet_panics(str);
-    }
-
-    janet_panicf("D-Bus method call failed: %s", strerror(-rv));
-  }
-
-  return janet_wrap_abstract(reply);
-}
-
 JanetRegExt cfuns_bus[] = { JANET_REG("open-user-bus", cfun_open_user_bus),
                             JANET_REG("open-system-bus", cfun_open_system_bus),
                             JANET_REG("close-bus", cfun_close_bus),
@@ -192,5 +192,4 @@ JanetRegExt cfuns_bus[] = { JANET_REG("open-user-bus", cfun_open_user_bus),
                             JANET_REG("set-allow-interactive-authorization",
                                       cfun_set_allow_interactive_authorization),
                             JANET_REG("list-names", cfun_list_names),
-                            JANET_REG("call", cfun_call),
                             JANET_REG_END };

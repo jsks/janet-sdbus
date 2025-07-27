@@ -467,13 +467,13 @@ JANET_FN(
 
   sd_bus_message *msg = NULL;
 
-  sd_bus **bus_ptr        = janet_getabstract(argv, 0, &dbus_bus_type);
+  Conn *conn              = janet_getabstract(argv, 0, &dbus_bus_type);
   const char *destination = janet_getcstring(argv, 1);
   const char *path        = janet_getcstring(argv, 2);
   const char *interface   = janet_getcstring(argv, 3);
   const char *member      = janet_getcstring(argv, 4);
 
-  int rv = sd_bus_message_new_method_call(*bus_ptr, &msg, destination, path,
+  int rv = sd_bus_message_new_method_call(conn->bus, &msg, destination, path,
                                           interface, member);
   if (rv < 0) {
     sd_bus_message_unref(msg);
@@ -510,8 +510,9 @@ JANET_FN(cfun_message_append, "(sdbus/message-append msg signature & args)",
   return janet_wrap_nil();
 }
 
-JANET_FN(cfun_message_read, "(sdbus/message-read msg &opt what)",
-         "Read a single complete type from a D-Bus message") {
+JANET_FN(cfun_message_read, "(sdbus/message-read msg)",
+         "Read a single complete type from a D-Bus message."
+         "Returns nil upon end of message.") {
   janet_fixarity(argc, 1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
@@ -525,7 +526,9 @@ JANET_FN(cfun_message_read, "(sdbus/message-read msg &opt what)",
 }
 
 JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
-         "Read all contents of a D-Bus message and return them as a tuple.") {
+         "Read all contents of a D-Bus message."
+         "If `msg` contains multiple complete types"
+         "returns an array, else a single value.") {
   janet_fixarity(argc, 1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
@@ -538,7 +541,7 @@ JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
   return (array->count < 2) ? janet_array_pop(array) : janet_wrap_array(array);
 }
 
-JANET_FN(cfun_message_seal, "(sdbus/message-seal)", "Seal a message") {
+JANET_FN(cfun_message_seal, "(sdbus/message-seal msg)", "Seal a message.") {
   janet_fixarity(argc, 1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
@@ -547,12 +550,20 @@ JANET_FN(cfun_message_seal, "(sdbus/message-seal)", "Seal a message") {
   return janet_wrap_nil();
 }
 
-JANET_FN(cfun_message_dump, "(sdbus/message-dump msg)",
-         "Dump a D-Bus message to stdout.") {
-  janet_fixarity(argc, 1);
+JANET_FN(cfun_message_dump, "(sdbus/message-dump msg &opt f)",
+         "Dump a D-Bus message to file."
+         "If `f` is not provided, dumps to stdout.") {
+  janet_arity(argc, 1, 2);
+
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
 
-  sd_bus_message_dump(*msg_ptr, NULL, SD_BUS_MESSAGE_DUMP_WITH_HEADER);
+  JanetFile dflt = { 0 };
+  JanetFile *f   = janet_optabstract(argv, argc, 1, &janet_file_type, &dflt);
+
+  if (f->file && (f->flags & JANET_FILE_CLOSED))
+    janet_panic("Cannot dump message to a closed file");
+
+  sd_bus_message_dump(*msg_ptr, f->file, SD_BUS_MESSAGE_DUMP_WITH_HEADER);
   CALL_SD_BUS_FUNC(sd_bus_message_rewind, *msg_ptr, true);
 
   return janet_wrap_nil();

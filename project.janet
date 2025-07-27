@@ -1,7 +1,7 @@
 (declare-project
   :name "sdbus"
   :description "sdbus bindings"
-  :version "0.0.1")
+  :version "0.1.0")
 
 ### Utility functions
 (defn run [& args]
@@ -47,7 +47,7 @@
   :lflags project-ldflags
   :headers ["src/common.h"]
   :source ["src/bus.c"
-           "src/error.c"
+           "src/call.c"
            "src/main.c"
            "src/message.c"])
 

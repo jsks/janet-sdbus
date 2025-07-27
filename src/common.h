@@ -24,14 +24,22 @@
     rv;                                                                        \
   })
 
-// D-Bus error type
-extern const JanetAbstractType dbus_error_type;
+// D-Bus bus connection
+typedef struct {
+  sd_bus *bus;          // D-Bus message bus
+  JanetStream *stream;  // Unix fd for bus connection
+  JanetFiber *listener; // Polling callback fiber
+  JanetTable *queue;    // Queue of pending async calls
+} Conn;
 
-// D-Bus connection functions
 extern const JanetAbstractType dbus_bus_type;
 extern JanetRegExt cfuns_bus[];
 
-// D-Bus message functions
+// D-Bus call
+extern const JanetAbstractType dbus_error_type;
+extern JanetRegExt cfuns_call[];
+
+// D-Bus message
 extern const JanetAbstractType dbus_message_type;
 extern JanetRegExt cfuns_message[];
 
