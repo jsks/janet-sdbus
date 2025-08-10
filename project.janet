@@ -45,11 +45,14 @@
   :name "sdbus/native"
   :cflags project-cflags
   :lflags project-ldflags
-  :headers ["src/common.h"]
-  :source ["src/bus.c"
+  :headers ["src/async.h" "src/common.h"]
+  :source ["src/async.c"
+           "src/bus.c"
            "src/call.c"
+           "src/export.c"
            "src/main.c"
-           "src/message.c"])
+           "src/message.c"
+           "src/slot.c"])
 
 (task "fmt" []
   (run "clang-format" "-i" "--Werror" "--style=file" ;(find-files "src" ".c" ".h")))
