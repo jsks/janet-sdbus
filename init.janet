@@ -2,27 +2,32 @@
 
 (defn call-method
   ```
-  Send a method call to a D-Bus service
+  Send a method call to a D-Bus service. Suspends the current fiber
+  without blocking the event loop.
 
   If the method expects arguments, the first rest argument must be a
-  D-Bus signature.
+  D-Bus signature string.
   ```
   [bus destination path interface method & rest]
-  (def signature (first rest))
   (def msg (message-new-method-call bus destination path interface method))
+  (def signature (first rest))
   (unless (or (nil? signature) (empty? signature))
     (message-append msg signature ;(slice rest 1)))
-  (-> (call bus msg)
-      message-read-all))
+  (with [ch (ev/chan)]
+    (call-async bus msg ch)
+    (match (ev/take ch)
+      [:ok msg] (message-read-all msg)
+      [:error err] (error err)
+      result (errorf "Unexpected result: %p" result))))
 
 (defn get-property
-  `Get a property from a D-Bus service`
+  ```
+  Get a property from a D-Bus service.
+  ```
   [bus destination path interface property]
-  (def msg (message-new-method-call bus destination path
-                                    "org.freedesktop.DBus.Properties" "Get"))
-  (message-append msg "ss" interface property)
-  (-> (call bus msg)
-      message-read-all))
+  (call-method bus destination path
+               "org.freedesktop.DBus.Properties" "Get"
+               "ss" interface property))
 
 (defn set-property
   ```
@@ -32,17 +37,15 @@
   members: a valid D-Bus signature string and a corresponding value.
   ```
   [bus destination path interface property variant]
-  (def msg (message-new-method-call bus destination path
-                                    "org.freedesktop.DBus.Properties" "Set"))
-  (message-append msg "ssv" interface property variant)
-  (call bus msg))
+  (call-method bus destination path "org.freedesktop.DBus.Properties" "Set"
+               "ssv" interface property variant))
 
-(defn method
+(defn remote-method
   `Returns a function to call a D-Bus method.`
   [bus destination path interface method &opt signature]
   (partial call-method bus destination path interface method signature))
 
-(defn property
+(defn remote-property
   ```
   Returns a function to get or set a D-Bus property.
 
@@ -51,7 +54,64 @@
   the property to that value.
   ```
   [bus destination path interface property]
-  (fn [& variant]
-    (if (empty? variant)
+  (fn [&opt variant]
+    (if (nil? variant)
       (get-property bus destination path interface property)
       (set-property bus destination path interface property variant))))
+
+(defn- method-wrapper [fun out-signature]
+  (fn [msg]
+    (def result (match (message-read-all msg)
+                  [& rest] (fun ;rest)
+                  x (fun x)))
+    (def reply (message-new-method-return msg))
+    (message-append reply out-signature result)
+    reply))
+
+(defn create-method [in-signature out-signature fun]
+  ```
+  Create a D-Bus method definition map.
+  ```
+  {:type 'method
+   :sig-in in-signature
+   :sig-out out-signature
+   :fun (method-wrapper fun out-signature)})
+
+(defmacro method [& forms]
+  (match forms
+    [': in '-> out args & body] ~(sdbus/create-method ,in ,out (fn ,args ,;body))
+    [args & body] ~(sdbus/create-method "" "" (fn ,args ,;body))
+    _ ~(error "Invalid method definition syntax")))
+
+(def- dbus-interface ["org.freedesktop.DBus"
+                      "/org/freedesktop/DBus"
+                      "org.freedesktop.DBus"])
+
+(defn request-name
+  ```
+  * `:a` --- DBUS_NAME_FLAG_ALLOW_REPLACEMENT
+  * `:n` --- DBUS_NAME_FLAG_DO_NOT_QUEUE
+  * `:r` --- DBUS_NAME_FLAG_REPLACE_EXISTING
+  ```
+  [bus name &opt flags]
+  (default flags "")
+  (def dbus-flag (->> (pairs {:a 0x1 :r 0x2 :n 0x4})
+                      (keep (fn [[key val]] (when (string/check-set flags key) val)))
+                      (reduce bor 0)))
+
+  (def return-code (call-method bus ;dbus-interface "RequestName" "su" name dbus-flag))
+  (case return-code
+    1 nil
+    2 :queued
+    3 (errorf "%s: already has an owner" name)
+    4 nil
+    (errorf "%s: unknown error")))
+
+(defn release-name
+  [bus name]
+  (def return-code (call-method bus ;dbus-interface "ReleaseName" "s" name))
+  (case return-code
+    1 nil
+    2 (errorf "%s: does not exist" name)
+    3 (errorf "%s: caller is not the owner" name)
+    (errorf "%s: unknown error")))

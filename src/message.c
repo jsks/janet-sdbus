@@ -487,6 +487,28 @@ JANET_FN(
   return janet_wrap_abstract(msg_ptr);
 }
 
+JANET_FN(cfun_message_new_method_return,
+         "(sdbus/message-new-method-return call)",
+         "Create a new D-Bus message object in response to a method call.") {
+  janet_fixarity(argc, 1);
+
+  sd_bus_message *reply = NULL;
+
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+
+  int rv = sd_bus_message_new_method_return(*msg_ptr, &reply);
+  if (rv < 0) {
+    sd_bus_message_unref(reply);
+    janet_panicf("failed to create message: %s", strerror(-rv));
+  }
+
+  sd_bus_message **reply_ptr =
+      janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
+  *reply_ptr = reply;
+
+  return janet_wrap_abstract(reply_ptr);
+}
+
 JANET_FN(cfun_message_unref, "(sdbus/message-unref msg)",
          "Deallocate a D-Bus message.") {
   janet_fixarity(argc, 1);
@@ -572,6 +594,7 @@ JANET_FN(cfun_message_dump, "(sdbus/message-dump msg &opt f)",
 JanetRegExt cfuns_message[] = {
   JANET_REG("message-unref", cfun_message_unref),
   JANET_REG("message-new-method-call", cfun_message_new_method_call),
+  JANET_REG("message-new-method-return", cfun_message_new_method_return),
   JANET_REG("message-seal", cfun_message_seal),
   JANET_REG("message-append", cfun_message_append),
   JANET_REG("message-read", cfun_message_read),

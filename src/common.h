@@ -44,6 +44,8 @@ extern JanetRegExt cfuns_call[];
 extern const JanetAbstractType dbus_message_type;
 extern JanetRegExt cfuns_message[];
 
+// D-Bus export
+extern JanetRegExt cfuns_export[];
 
 // D-Bus slot
 extern const JanetAbstractType dbus_slot_type;
