@@ -30,6 +30,7 @@ typedef struct {
   JanetStream *stream;  // Unix fd for bus connection
   JanetFiber *listener; // Polling callback fiber
   JanetTable *queue;    // Queue of pending async calls
+  int subscribers;      // Number of published interfaces
 } Conn;
 
 extern const JanetAbstractType dbus_bus_type;
@@ -42,5 +43,10 @@ extern JanetRegExt cfuns_call[];
 // D-Bus message
 extern const JanetAbstractType dbus_message_type;
 extern JanetRegExt cfuns_message[];
+
+
+// D-Bus slot
+extern const JanetAbstractType dbus_slot_type;
+extern JanetRegExt cfuns_slot[];
 
 #endif
