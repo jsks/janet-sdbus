@@ -174,13 +174,13 @@ JANET_FN(cfun_list_names, "(sdbus/list-names bus)",
   JanetArray *list = janet_array(1);
   for (char **p = acquired; *p; p++) {
     Janet name = janet_cstringv(*p);
-    free(*p);
+    janet_free(*p);
 
     // TODO: janet_array_push may panic leading to a memory leak
     janet_array_push(list, name);
   }
 
-  free(acquired);
+  janet_free(acquired);
   return janet_wrap_array(list);
 }
 

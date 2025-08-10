@@ -1,22 +1,20 @@
 (use ../vendor/test)
-(import sdbus/native :as sdbus)
+(import sdbus)
 
 (start-suite)
 
 (def bus (sdbus/open-user-bus))
 
 (assert (sdbus/bus-is-open bus))
+(assert (string? (sdbus/get-unique-name bus)))
 (assert (deep= (keys bus) @[:close]))
 
 (def names (sort (sdbus/list-names bus)))
-(def msg (sdbus/message-new-method-call
-           bus
-           "org.freedesktop.DBus"
-           "/org/freedesktop/DBus"
-           "org.freedesktop.DBus"
-           "ListNames"))
-(def out (-> (sdbus/call bus msg) sdbus/message-read sort))
-
+(def out (-> (sdbus/call-method bus "org.freedesktop.DBus"
+                                    "/org/freedesktop/DBus"
+                                    "org.freedesktop.DBus"
+                                    "ListNames")
+             sort))
 (assert (deep= names out))
 
 (sdbus/close-bus bus)
