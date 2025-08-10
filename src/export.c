@@ -4,9 +4,19 @@
 #include "async.h"
 #include "common.h"
 
+#define cstr(s) ((char *) janet_unwrap_string(s))
+
+#define FREE_STATE(state)                                                      \
+  do {                                                                         \
+    janet_gcunroot(state->methods);                                            \
+    janet_free(state->vtable);                                                 \
+    janet_free(state);                                                         \
+  } while (0)
+
 typedef struct {
   Conn *conn;
   Janet methods;
+  sd_bus_vtable *vtable;
 } ExportCallbackState;
 
 static inline Janet struct_symget(JanetStruct st, const char *key) {
@@ -43,7 +53,7 @@ static int method_handler(sd_bus_message *msg, void *userdata,
 
   if (sig == JANET_SIGNAL_ERROR)
     return sd_bus_error_setf(ret_error, "org.janet.error",
-                             "Failed to call method: %s", member);
+                             "internal method error: %s", (char *) janet_to_string(out));
 
   sd_bus_message **reply = janet_unwrap_abstract(out);
   sd_bus_message_send(*reply);
@@ -55,31 +65,22 @@ static void destroy_export_callback(void *userdata) {
   ExportCallbackState *state = userdata;
 
   state->conn->subscribers--;
-  janet_gcunroot(state->methods);
-
-  janet_free(state);
+  FREE_STATE(state);
 }
 
-static sd_bus_vtable create_vtable_method(JanetString name, JanetStruct entry) {
-  Janet in  = struct_symget(entry, "sig-in"),
-        out = struct_symget(entry, "sig-out");
+static sd_bus_vtable create_vtable_method(const char *name, JanetStruct entry) {
+  const char *in = cstr(struct_symget(entry, "sig-in")),
+             *out = cstr(struct_symget(entry, "sig-out"));
 
   Janet fun = struct_symget(entry, "fun");
   if (!janet_checktype(fun, JANET_FUNCTION))
     janet_panicf("Expected function for method: %s", name);
 
-  return (sd_bus_vtable) SD_BUS_METHOD(
-      (char *) name, (char *) janet_unwrap_string(in),
-      (char *) janet_unwrap_string(out), method_handler, 0);
-  // return (sd_bus_vtable) SD_BUS_METHOD("example", "i", "i", method_handler,
-  // 0);
+  return (sd_bus_vtable) SD_BUS_METHOD(name, in, out, method_handler, 0);
 }
 
 static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
-  sd_bus_vtable *vtable;
-  if (!(vtable = janet_calloc(len, sizeof(sd_bus_vtable))))
-    JANET_OUT_OF_MEMORY;
-
+  sd_bus_vtable vtable[len];
   vtable[0] = (sd_bus_vtable) SD_BUS_VTABLE_START(0);
 
   const JanetKV *kv = NULL;
@@ -88,14 +89,25 @@ static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
     if (i >= len - 1)
       janet_panicf("Too many methods for D-Bus interface: %d", len);
 
-    JanetString member = janet_unwrap_string(kv->key);
+    const char *member = cstr(kv->key);
+    if (sd_bus_member_name_is_valid(member) == 0)
+      janet_panicf("Invalid D-Bus method name: %s", member);
+
     JanetStruct entry  = janet_unwrap_struct(kv->value);
 
     vtable[++i] = create_vtable_method(member, entry);
   }
 
   vtable[len - 1] = (sd_bus_vtable) SD_BUS_VTABLE_END;
-  return vtable;
+
+  // This is dumb, but janet_panic* will longjmp leading to a memory
+  // leak for vtable.
+  sd_bus_vtable *copy;
+  if (!(copy = janet_malloc(len * sizeof(sd_bus_vtable))))
+    JANET_OUT_OF_MEMORY;
+  memcpy(copy, vtable, len * sizeof(sd_bus_vtable));
+
+  return copy;
 }
 
 JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
@@ -107,6 +119,12 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
   const char *interface = janet_getcstring(argv, 2);
   JanetDictView dict    = janet_getdictionary(argv, 3);
 
+  if (sd_bus_interface_name_is_valid(interface) == 0)
+    janet_panicf("Invalid D-Bus interface name: %s", interface);
+
+  if (sd_bus_object_path_is_valid(path) == 0)
+    janet_panicf("Invalid D-Bus object path: %s", path);
+
   if (dict.len == 0)
     janet_panicf("No methods to register for interface: %s", interface);
 
@@ -115,7 +133,7 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
   ExportCallbackState *state;
   if (!(state = janet_malloc(sizeof(ExportCallbackState))))
     JANET_OUT_OF_MEMORY;
-  *state = (ExportCallbackState) { .conn = conn, .methods = argv[3] };
+  *state = (ExportCallbackState) { .conn = conn, .methods = argv[3], .vtable = vtable };
   janet_gcroot(state->methods);
 
   sd_bus_slot **slot_ptr =
@@ -125,9 +143,7 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
   int rv = sd_bus_add_object_vtable(conn->bus, slot_ptr, path, interface,
                                     vtable, state);
   if (rv < 0) {
-    janet_gcunroot(state->methods);
-    janet_free(vtable);
-    janet_free(state);
+    FREE_STATE(state);
     janet_panicf("Failed to register D-Bus service: %s", strerror(-rv));
   }
 

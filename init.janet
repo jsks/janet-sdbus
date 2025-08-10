@@ -61,11 +61,13 @@
 
 (defn- method-wrapper [fun out-signature]
   (fn [msg]
-    (def result (match (message-read-all msg)
-                  [& rest] (fun ;rest)
-                  x (fun x)))
+    (def args (match (message-read-all msg)
+                nil []
+                [& rest] rest
+                x [x]))
     (def reply (message-new-method-return msg))
-    (message-append reply out-signature result)
+    (when-let [result (fun ;args)]
+      (message-append reply out-signature result))
     reply))
 
 (defn create-method [in-signature out-signature fun]
@@ -79,7 +81,7 @@
 
 (defmacro method [& forms]
   (match forms
-    [': in '-> out args & body] ~(sdbus/create-method ,in ,out (fn ,args ,;body))
+    [':: in '-> out args & body] ~(sdbus/create-method ,in ,out (fn ,args ,;body))
     [args & body] ~(sdbus/create-method "" "" (fn ,args ,;body))
     _ ~(error "Invalid method definition syntax")))
 

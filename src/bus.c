@@ -33,12 +33,7 @@ static JanetMethod dbus_bus_methods[] = {
 
 static int dbus_bus_gc(void *p, size_t size) {
   UNUSED(size);
-
-  Conn *conn = (Conn *) p;
-  sd_bus_flush_close_unref(conn->bus);
-
-  if (conn->stream)
-    janet_stream_close(conn->stream);
+  sd_bus_flush_close_unref(((Conn *) p)->bus);
 
   return 0;
 }
