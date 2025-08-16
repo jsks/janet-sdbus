@@ -1,0 +1,34 @@
+name: CI
+on: push
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Janet
+        uses: actions/checkout@v5
+        with:
+          repository: janet-lang/janet
+          path: janet
+
+      - name: Install Janet
+        run: |
+          cd janet && make && sudo make install && sudo make install-jpm-git
+
+      - name: System dependencies
+        run: |
+          sudo apt install -y build-essential libsystemd-dev pkg-config
+
+      - name: Checkout janet-sdbus repository
+        uses: actions/checkout@v5
+        with:
+          path: janet-sdbus
+
+      - name: Build janet-sdbus
+        run: |
+          cd janet-sdbus && jpm --build-type=debug build && jpm -l install
+
+      - name: Run unit tests
+        run: |
+          cd janet-sdbus && LD_PRELOAD=$(gcc -print-file-name=libasan.so) jpm -l test
