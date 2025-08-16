@@ -75,7 +75,8 @@
                 [& rest] rest
                 x [x]))
     (def reply (message-new-method-return msg))
-    (when-let [result (fun ;args)]
+    (def result (fun ;args))
+    (if-not (nil? result)
       (message-append reply out-signature result))
     reply))
 
