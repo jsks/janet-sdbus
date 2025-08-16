@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Joshua Krusell
+
 (defn- to-struct [tag attr &opt children]
   (default children @[])
   {:tag tag

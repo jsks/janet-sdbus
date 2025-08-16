@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Joshua Krusell
+
 (import ./native :prefix "" :export true)
 (import ./introspect :prefix "" :export true)
 

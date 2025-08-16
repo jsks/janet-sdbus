@@ -1,5 +1,6 @@
 (declare-project
   :name "sdbus"
+  :author "jsks"
   :description "sdbus bindings"
   :version "0.1.0")
 
