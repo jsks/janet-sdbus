@@ -28,6 +28,48 @@ static inline Janet struct_symget(JanetStruct st, const char *key) {
   return value;
 }
 
+uint64_t sd_bus_flags(JanetKeyword keys) {
+  int32_t len   = janet_string_length(keys);
+  uint64_t mask = 0;
+
+  if (len == 0)
+    return mask;
+
+  for (int32_t i = 0; i < len; i++) {
+    switch (keys[i]) {
+      case 'd':
+        mask |= SD_BUS_VTABLE_DEPRECATED;
+        break;
+      case 'h':
+        mask |= SD_BUS_VTABLE_HIDDEN;
+        break;
+      case 's':
+        mask |= SD_BUS_VTABLE_SENSITIVE;
+        break;
+      case 'n':
+        mask |= SD_BUS_VTABLE_METHOD_NO_REPLY;
+        break;
+      case 'r':
+        mask |= SD_BUS_VTABLE_PROPERTY_CONST;
+        break;
+      case 'e':
+        mask |= SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE;
+        break;
+      case 'i':
+        mask |= SD_BUS_VTABLE_PROPERTY_EMITS_INVALIDATION;
+        break;
+      case 'x':
+        mask |= SD_BUS_VTABLE_PROPERTY_EXPLICIT;
+        break;
+      default:
+        janet_panicf("Unknown export flag: %c", keys[i]);
+        break;
+    }
+  }
+
+  return mask;
+}
+
 static int method_handler(sd_bus_message *msg, void *userdata,
                           sd_bus_error *ret_error) {
   const char *member         = sd_bus_message_get_member(msg);
@@ -44,7 +86,7 @@ static int method_handler(sd_bus_message *msg, void *userdata,
   Janet out, argv[] = { janet_wrap_abstract(msg_ptr) };
   Janet method =
             janet_dictionary_get(env.kvs, env.cap, janet_ckeywordv(member)),
-        fun = struct_symget(janet_unwrap_struct(method), "fun");
+        fun = struct_symget(janet_unwrap_struct(method), "function");
 
   JanetSignal sig =
       janet_pcall(janet_unwrap_function(fun), 1, argv, &out, NULL);
@@ -53,7 +95,8 @@ static int method_handler(sd_bus_message *msg, void *userdata,
 
   if (sig == JANET_SIGNAL_ERROR)
     return sd_bus_error_setf(ret_error, "org.janet.error",
-                             "internal method error: %s", (char *) janet_to_string(out));
+                             "internal method error: %s",
+                             (char *) janet_to_string(out));
 
   sd_bus_message **reply = janet_unwrap_abstract(out);
   sd_bus_message_send(*reply);
@@ -69,14 +112,18 @@ static void destroy_export_callback(void *userdata) {
 }
 
 static sd_bus_vtable create_vtable_method(const char *name, JanetStruct entry) {
-  const char *in = cstr(struct_symget(entry, "sig-in")),
+  const char *in  = cstr(struct_symget(entry, "sig-in")),
              *out = cstr(struct_symget(entry, "sig-out"));
 
-  Janet fun = struct_symget(entry, "fun");
+  Janet fun = struct_symget(entry, "function");
   if (!janet_checktype(fun, JANET_FUNCTION))
     janet_panicf("Expected function for method: %s", name);
 
-  return (sd_bus_vtable) SD_BUS_METHOD(name, in, out, method_handler, 0);
+  Janet flags       = struct_symget(entry, "flags");
+  JanetKeyword keys = janet_unwrap_keyword(flags);
+  uint64_t mask     = sd_bus_flags(keys);
+
+  return (sd_bus_vtable) SD_BUS_METHOD(name, in, out, method_handler, mask);
 }
 
 static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
@@ -93,7 +140,7 @@ static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
     if (sd_bus_member_name_is_valid(member) == 0)
       janet_panicf("Invalid D-Bus method name: %s", member);
 
-    JanetStruct entry  = janet_unwrap_struct(kv->value);
+    JanetStruct entry = janet_unwrap_struct(kv->value);
 
     vtable[++i] = create_vtable_method(member, entry);
   }
@@ -133,7 +180,9 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
   ExportCallbackState *state;
   if (!(state = janet_malloc(sizeof(ExportCallbackState))))
     JANET_OUT_OF_MEMORY;
-  *state = (ExportCallbackState) { .conn = conn, .methods = argv[3], .vtable = vtable };
+  *state = (ExportCallbackState) { .conn    = conn,
+                                   .methods = argv[3],
+                                   .vtable  = vtable };
   janet_gcroot(state->methods);
 
   sd_bus_slot **slot_ptr =
