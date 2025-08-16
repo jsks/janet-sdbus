@@ -1,4 +1,5 @@
 (import ./native :prefix "" :export true)
+(import ./introspect :prefix "" :export true)
 
 (defn call-method
   ```
@@ -19,6 +20,14 @@
       [:ok msg] (message-read-all msg)
       [:error err] (error err)
       result (errorf "Unexpected result: %p" result))))
+
+(defn introspect
+  ```
+  Get introspection data for a D-Bus object. Returns a struct.
+  ```
+  [bus destination path]
+  (-> (call-method bus destination path "org.freedesktop.DBus.Introspectable" "Introspect")
+      parse-xml))
 
 (defn get-property
   ```
