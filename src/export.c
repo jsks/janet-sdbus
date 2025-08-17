@@ -28,7 +28,7 @@ static inline Janet struct_symget(JanetStruct st, const char *key) {
   return value;
 }
 
-uint64_t sd_bus_flags(JanetKeyword keys) {
+static uint64_t sd_bus_flags(JanetKeyword keys) {
   int32_t len   = janet_string_length(keys);
   uint64_t mask = 0;
 
@@ -60,6 +60,8 @@ uint64_t sd_bus_flags(JanetKeyword keys) {
         break;
       case 'x':
         mask |= SD_BUS_VTABLE_PROPERTY_EXPLICIT;
+        break;
+      case 'w': // Property writeable flag
         break;
       default:
         janet_panicf("Unknown export flag: %c", keys[i]);
@@ -104,6 +106,50 @@ static int method_handler(sd_bus_message *msg, void *userdata,
   return 0;
 }
 
+typedef Janet (*invoke_obj_method)(int32_t, Janet *);
+
+static int property_handler_core(const char *property, invoke_obj_method method,
+                                 sd_bus_message *msg, void *userdata,
+                                 sd_bus_error *ret_error) {
+  ExportCallbackState *state = userdata;
+  JanetDictView env;
+  janet_dictionary_view(state->methods, &env.kvs, &env.len, &env.cap);
+
+  Janet prop =
+      janet_dictionary_get(env.kvs, env.cap, janet_ckeywordv(property));
+
+  sd_bus_message **msg_ptr =
+      janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
+  *msg_ptr = sd_bus_message_ref(msg);
+
+  Janet result = method(2, (Janet[]) { prop, janet_wrap_abstract(msg_ptr) });
+  if (janet_checktype(result, JANET_NIL))
+    return sd_bus_error_setf(ret_error, "org.janet.error",
+                             "internal property error: %s",
+                             (char *) janet_to_string(result));
+
+  return 0;
+}
+
+#define DEFINE_PROPERTY_HANDLER(suffix, method_str)                            \
+  static Janet invoke_obj_method_##suffix(int32_t argc, Janet *argv) {         \
+    return janet_mcall(method_str, argc, argv);                                \
+  }                                                                            \
+                                                                               \
+  static int property_handler_##suffix(                                        \
+      sd_bus *bus, const char *path, const char *interface,                    \
+      const char *property, sd_bus_message *msg, void *userdata,               \
+      sd_bus_error *ret_error) {                                               \
+    UNUSED(bus);                                                               \
+    UNUSED(path);                                                              \
+    UNUSED(interface);                                                         \
+    return property_handler_core(property, invoke_obj_method_##suffix, msg,    \
+                                 userdata, ret_error);                         \
+  }
+
+DEFINE_PROPERTY_HANDLER(get, "getter");
+DEFINE_PROPERTY_HANDLER(set, "setter");
+
 static void destroy_export_callback(void *userdata) {
   ExportCallbackState *state = userdata;
 
@@ -126,6 +172,36 @@ static sd_bus_vtable create_vtable_method(const char *name, JanetStruct entry) {
   return (sd_bus_vtable) SD_BUS_METHOD(name, in, out, method_handler, mask);
 }
 
+static sd_bus_vtable create_vtable_property(const char *name,
+                                            JanetStruct entry) {
+  const char *sig = cstr(struct_symget(entry, "sig"));
+
+  Janet flags       = struct_symget(entry, "flags");
+  JanetKeyword keys = janet_unwrap_keyword(flags);
+  uint64_t mask     = sd_bus_flags(keys);
+
+  Janet writable = struct_symget(entry, "writable");
+  sd_bus_vtable property;
+  if (janet_unwrap_boolean(writable))
+    property = (sd_bus_vtable) SD_BUS_WRITABLE_PROPERTY(
+        name, sig, property_handler_get, property_handler_set, 0, mask);
+  else
+    property = (sd_bus_vtable) SD_BUS_PROPERTY(name, sig, property_handler_get,
+                                               0, mask);
+
+  return property;
+}
+
+static sd_bus_vtable create_vtable_signal(const char *name, JanetStruct entry) {
+  const char *sig = cstr(struct_symget(entry, "sig"));
+
+  Janet flags       = struct_symget(entry, "flags");
+  JanetKeyword keys = janet_unwrap_keyword(flags);
+  uint64_t mask     = sd_bus_flags(keys);
+
+  return (sd_bus_vtable) SD_BUS_SIGNAL(name, sig, mask);
+}
+
 static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
   sd_bus_vtable vtable[len];
   vtable[0] = (sd_bus_vtable) SD_BUS_VTABLE_START(0);
@@ -141,8 +217,15 @@ static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
       janet_panicf("Invalid D-Bus method name: %s", member);
 
     JanetStruct entry = janet_unwrap_struct(kv->value);
-
-    vtable[++i] = create_vtable_method(member, entry);
+    Janet type        = struct_symget(entry, "type");
+    if (janet_symeq(type, "method"))
+      vtable[++i] = create_vtable_method(member, entry);
+    else if (janet_symeq(type, "property"))
+      vtable[++i] = create_vtable_property(member, entry);
+    else if (janet_symeq(type, "signal"))
+      vtable[++i] = create_vtable_signal(member, entry);
+    else
+      janet_panicf("Unknown D-Bus member type: %s", cstr(type));
   }
 
   vtable[len - 1] = (sd_bus_vtable) SD_BUS_VTABLE_END;
@@ -158,24 +241,24 @@ static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
 }
 
 JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
-         "Register a D-Bus service with the given bus.") {
+         "Register a D-Bus interface with the given bus.") {
   janet_fixarity(argc, 4);
 
   Conn *conn            = janet_getabstract(argv, 0, &dbus_bus_type);
   const char *path      = janet_getcstring(argv, 1);
   const char *interface = janet_getcstring(argv, 2);
-  JanetDictView dict    = janet_getdictionary(argv, 3);
-
-  if (sd_bus_interface_name_is_valid(interface) == 0)
-    janet_panicf("Invalid D-Bus interface name: %s", interface);
+  JanetDictView env     = janet_getdictionary(argv, 3);
 
   if (sd_bus_object_path_is_valid(path) == 0)
     janet_panicf("Invalid D-Bus object path: %s", path);
 
-  if (dict.len == 0)
-    janet_panicf("No methods to register for interface: %s", interface);
+  if (sd_bus_interface_name_is_valid(interface) == 0)
+    janet_panicf("Invalid D-Bus interface name: %s", interface);
 
-  sd_bus_vtable *vtable = create_vtable(dict.len + 2, dict);
+  if (env.len == 0)
+    janet_panicf("No members to register for interface: %s", interface);
+
+  sd_bus_vtable *vtable = create_vtable(env.len + 2, env);
 
   ExportCallbackState *state;
   if (!(state = janet_malloc(sizeof(ExportCallbackState))))
@@ -193,7 +276,7 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
                                     vtable, state);
   if (rv < 0) {
     FREE_STATE(state);
-    janet_panicf("Failed to register D-Bus service: %s", strerror(-rv));
+    janet_panicf("Failed to register D-Bus interface: %s", strerror(-rv));
   }
 
   sd_bus_slot_set_destroy_callback(*slot_ptr, destroy_export_callback);

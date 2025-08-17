@@ -71,29 +71,39 @@
       (get-property bus destination path interface property)
       (set-property bus destination path interface property variant))))
 
+(defn- normalized-read [msg]
+  (match (message-read-all msg)
+    nil []
+    [& rest] rest
+    x [x]))
+
+(defn- property-wrapper [fun]
+  (fn [self msg]
+    (try (fun self msg) ([err] err))))
+
+(defn create-property [value &named sig flags]
+  ```
+  Create a D-Bus property definition map.
+  ```
+  (default flags "")
+  (when (not (string/check-set :dhsreixw flags))
+    (errorf "Invalid property flags: %s" flags))
+  {:type 'property
+   :flags flags
+   :writable (string/check-set flags :w)
+   :sig sig
+   :value value
+   :getter (property-wrapper (fn [self reply] (message-append reply (self :sig) (self :value))))
+   :setter (property-wrapper (fn [self msg] (set (self :value) (normalized-read msg))))})
+
 (defn- method-wrapper [fun out-signature]
   (fn [msg]
-    (def args (match (message-read-all msg)
-                nil []
-                [& rest] rest
-                x [x]))
+    (def args (normalized-read msg))
     (def reply (message-new-method-return msg))
     (def result (fun ;args))
     (if-not (nil? result)
       (message-append reply out-signature result))
     reply))
-
-(defn create-property [signature value &opt flags]
-  ```
-  Create a D-Bus property definition map.
-  ```
-  (default flags "")
-  (when (not (string/check-set ":dhsreix" flags))
-    (errorf "Invalid property flags: %s" flags))
-  {:type 'property
-   :flags flags
-   :sig signature
-   :value value})
 
 (defn create-method [fun &named in-sig out-sig flags]
   ```
@@ -109,6 +119,17 @@
    :sig-in in-sig
    :sig-out out-sig
    :function (method-wrapper fun out-sig)})
+
+(defn create-signal
+  ```
+    Create a D-Bus signal definition map.
+    ```
+  [signature &named sig flags]
+  (default flags "")
+  (when (not (string/check-set ":dhs" flags))
+    (errorf "Invalid signal flags: %s" flags))
+  {:type 'signal
+   :sig signature})
 
 (defmacro method [& forms]
   (match forms
