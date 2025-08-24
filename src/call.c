@@ -4,6 +4,12 @@
 #include "async.h"
 #include "common.h"
 
+#define FREE_CALL_STATE(state)                                                 \
+  do {                                                                         \
+    janet_free(state->call);                                                   \
+    janet_free(state);                                                         \
+  } while (0)
+
 typedef struct {
   Conn *conn;
   AsyncCall *call;
@@ -42,10 +48,10 @@ static void destroy_call_callback(void *userdata) {
   AsyncCallbackState *state = userdata;
 
   dequeue_call(state->conn, state->call);
-  janet_free(state->call);
-  janet_free(state);
   if (is_listener_closeable(state->conn))
     END_LISTENER(state->conn);
+
+  FREE_CALL_STATE(state);
 }
 
 static int message_handler(sd_bus_message *reply, void *userdata,
@@ -108,12 +114,17 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
     JANET_OUT_OF_MEMORY;
   *state = (AsyncCallbackState) { .conn = conn, .call = call };
 
-  CALL_SD_BUS_FUNC(sd_bus_call_async, conn->bus, call->slot, *msg_ptr,
-                   message_handler, state, 0);
+  int rv = sd_bus_call_async(conn->bus, call->slot, *msg_ptr, message_handler,
+                             state, 0);
+  if (rv < 0) {
+    FREE_CALL_STATE(state);
+    janet_panicf("failed to call sd_bus_call_async: %s", strerror(-rv));
+  }
+
   sd_bus_slot_set_floating(*call->slot, 1);
 
   uint64_t cookie;
-  CALL_SD_BUS_FUNC(sd_bus_message_get_cookie, *msg_ptr, &cookie);
+  sd_bus_message_get_cookie(*msg_ptr, &cookie);
   call->cookie = janet_wrap_u64(cookie);
 
   queue_call(conn, call);
