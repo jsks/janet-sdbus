@@ -11,8 +11,9 @@ AsyncCall *create_async_call(JanetChannel *ch) {
   if (!(call = janet_malloc(sizeof(AsyncCall))))
     JANET_OUT_OF_MEMORY;
 
-  call->chan = ch;
-  call->slot = janet_abstract(&dbus_slot_type, sizeof(sd_bus_slot *));
+  call->chan  = ch;
+  call->slot  = janet_abstract(&dbus_slot_type, sizeof(sd_bus_slot *));
+  *call->slot = NULL;
 
   return call;
 }
@@ -48,9 +49,9 @@ static void closeall_pending_calls(Conn *conn, Janet msg) {
   while ((kv = janet_dictionary_next(kvs, cap, kv))) {
     AsyncCall *call = janet_unwrap_abstract(kv->value);
 
-    sd_bus_slot_unref(*call->slot);
-    *call->slot = NULL;
     janet_channel_give(call->chan, janet_wrap_tuple(tuple));
+    sd_bus_slot_unrefp(call->slot);
+    *call->slot = NULL;
   }
 
   janet_table_clear(conn->queue);
@@ -98,6 +99,9 @@ static void bus_process_driver(JanetFiber *fiber, JanetAsyncEvent event) {
       break;
   }
 
+  // Ideally we would keep the listener fiber up and avoid restarting
+  // on the next call; however, a running event-loop task in Janet
+  // blocks program exit.
   if (is_listener_closeable(conn))
     END_LISTENER(conn);
 }
