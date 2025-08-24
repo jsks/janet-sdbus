@@ -17,12 +17,9 @@
   } while (0)
 
 #define CALL_SD_BUS_FUNC(func, ...)                                            \
-  ({                                                                           \
-    int rv;                                                                    \
-    if ((rv = func(__VA_ARGS__)) < 0)                                          \
-      janet_panicf("failed to call %s: %s", #func, strerror(-rv));             \
-    rv;                                                                        \
-  })
+  check_sd_bus_return(#func, func(__VA_ARGS__))
+
+int check_sd_bus_return(const char *, int);
 
 // D-Bus bus connection
 typedef struct {
