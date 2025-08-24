@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 Joshua Krusell
 
-#include <stdbool.h>
-
 #include "common.h"
 
 #define MESSAGE_PEEK(msg, type, contents)                                      \
@@ -46,7 +44,7 @@ static int gc_sdbus_message(void *data, size_t len) {
   return 0;
 }
 
-static inline bool is_basic_type(int ch) {
+static bool is_basic_type(int ch) {
   // TODO: byte and file descriptor types
   return strchr("bnqiuxtdsog", ch) != NULL;
 }
@@ -55,20 +53,20 @@ static inline bool is_basic_type(int ch) {
 // Utility functions for parsing signatures and appending data
 // -------------------------------------------------------------------
 
-static inline int skip(Parser *p, size_t skip) {
+static int skip(Parser *p, size_t skip) {
   p->cursor += skip;
   return *p->cursor;
 }
 
-static inline int next(Parser *p) {
+static int next(Parser *p) {
   return *(++p->cursor);
 }
 
-static inline int peek(Parser *p) {
+static int peek(Parser *p) {
   return *(p->cursor + 1);
 }
 
-static inline int cursor(Parser *p) {
+static int cursor(Parser *p) {
   return *p->cursor;
 }
 
@@ -200,7 +198,8 @@ static void append_dict_type(Parser *p, Janet arg) {
 static void append_array_type(Parser *p, Janet arg) {
   if (peek(p) == '{') {
     next(p);
-    return append_dict_type(p, arg);
+    append_dict_type(p, arg);
+    return;
   }
 
   size_t end      = find_subtype(p->cursor);
@@ -465,24 +464,17 @@ JANET_FN(
     "Create a new D-Bus method call message.") {
   janet_fixarity(argc, 5);
 
-  sd_bus_message *msg = NULL;
-
   Conn *conn              = janet_getabstract(argv, 0, &dbus_bus_type);
   const char *destination = janet_getcstring(argv, 1);
   const char *path        = janet_getcstring(argv, 2);
   const char *interface   = janet_getcstring(argv, 3);
   const char *member      = janet_getcstring(argv, 4);
 
-  int rv = sd_bus_message_new_method_call(conn->bus, &msg, destination, path,
-                                          interface, member);
-  if (rv < 0) {
-    sd_bus_message_unref(msg);
-    janet_panicf("failed to create message: %s", strerror(-rv));
-  }
-
   sd_bus_message **msg_ptr =
       janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
-  *msg_ptr = msg;
+
+  CALL_SD_BUS_FUNC(sd_bus_message_new_method_call, conn->bus, msg_ptr,
+                   destination, path, interface, member);
 
   return janet_wrap_abstract(msg_ptr);
 }
@@ -492,22 +484,65 @@ JANET_FN(cfun_message_new_method_return,
          "Create a new D-Bus message object in response to a method call.") {
   janet_fixarity(argc, 1);
 
-  sd_bus_message *reply = NULL;
-
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
-
-  int rv = sd_bus_message_new_method_return(*msg_ptr, &reply);
-  if (rv < 0) {
-    sd_bus_message_unref(reply);
-    janet_panicf("failed to create message: %s", strerror(-rv));
-  }
 
   sd_bus_message **reply_ptr =
       janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
-  *reply_ptr = reply;
+
+  CALL_SD_BUS_FUNC(sd_bus_message_new_method_return, *msg_ptr, reply_ptr);
 
   return janet_wrap_abstract(reply_ptr);
 }
+
+JANET_FN(cfun_message_new_method_error,
+         "(sdbus/message-new-method-error call name message)",
+         "Create a new D-Bus message object in response to a method\n"
+         "call with an error.") {
+  janet_fixarity(argc, 3);
+
+  sd_bus_message **call = janet_getabstract(argv, 0, &dbus_message_type);
+  const char *name      = janet_getcstring(argv, 1);
+  const char *message   = janet_getcstring(argv, 2);
+
+  sd_bus_error error = SD_BUS_ERROR_MAKE_CONST(name, message);
+  sd_bus_message **reply_ptr =
+      janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
+
+  CALL_SD_BUS_FUNC(sd_bus_message_new_method_error, *call, reply_ptr, &error);
+
+  return janet_wrap_abstract(reply_ptr);
+}
+
+JANET_FN(cfun_message_send, "(sdbus/message-send msg)",
+         "Send a D-Bus message.") {
+  janet_fixarity(argc, 1);
+
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+  CALL_SD_BUS_FUNC(sd_bus_message_send, *msg_ptr);
+
+  return janet_wrap_nil();
+}
+
+#define MESSAGE_GET(target)                                                    \
+  janet_fixarity(argc, 1);                                                     \
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);   \
+  const char *target       = sd_bus_message_get_##target(*msg_ptr);            \
+  return janet_cstringv(target);
+
+JANET_FN(cfun_message_get_destination, "(sdbus/message-get-destination msg)",
+         "Get the destination of a D-Bus message."){ MESSAGE_GET(destination) }
+
+JANET_FN(cfun_message_get_path, "(sdbus/message-get-path msg)",
+         "Get the object path of a D-Bus message."){ MESSAGE_GET(path) }
+
+JANET_FN(cfun_message_get_interface, "(sdbus/message-get-interface msg)",
+         "Get the interface of a D-Bus message."){ MESSAGE_GET(interface) }
+
+JANET_FN(cfun_message_get_member, "(sdbus/message-get-member msg)",
+         "Get the member of a D-Bus message."){ MESSAGE_GET(member) }
+
+JANET_FN(cfun_message_get_sender, "(sdbus/message-get-sender msg)",
+         "Get the sender of a D-Bus message."){ MESSAGE_GET(sender) }
 
 JANET_FN(cfun_message_unref, "(sdbus/message-unref msg)",
          "Deallocate a D-Bus message.") {
@@ -550,7 +585,8 @@ JANET_FN(cfun_message_read, "(sdbus/message-read msg)",
 JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
          "Read all contents of a D-Bus message."
          "If `msg` contains multiple complete types"
-         "returns an array, else a single value.") {
+         "returns an array, else a single value or nil if"
+         "`msg` is empty.") {
   janet_fixarity(argc, 1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
@@ -595,6 +631,13 @@ JanetRegExt cfuns_message[] = {
   JANET_REG("message-unref", cfun_message_unref),
   JANET_REG("message-new-method-call", cfun_message_new_method_call),
   JANET_REG("message-new-method-return", cfun_message_new_method_return),
+  JANET_REG("message-new-method-error", cfun_message_new_method_error),
+  JANET_REG("message-send", cfun_message_send),
+  JANET_REG("message-get-destination", cfun_message_get_destination),
+  JANET_REG("message-get-path", cfun_message_get_path),
+  JANET_REG("message-get-interface", cfun_message_get_interface),
+  JANET_REG("message-get-member", cfun_message_get_member),
+  JANET_REG("message-get-sender", cfun_message_get_sender),
   JANET_REG("message-seal", cfun_message_seal),
   JANET_REG("message-append", cfun_message_append),
   JANET_REG("message-read", cfun_message_read),
