@@ -8,6 +8,20 @@
 
 #include "common.h"
 
+#define END_LISTENER(conn)                                                     \
+  do {                                                                         \
+    janet_schedule(conn->listener, janet_wrap_nil());                          \
+    janet_async_end(conn->listener);                                           \
+    conn->listener = NULL;                                                     \
+  } while (0)
+
+#define CANCEL_LISTENER(conn, msg)                                             \
+  do {                                                                         \
+    janet_cancel(conn->listener, msg);                                         \
+    janet_async_end(conn->listener);                                           \
+    conn->listener = NULL;                                                     \
+  } while (0)
+
 typedef struct {
   Janet cookie;
   sd_bus_slot **slot;

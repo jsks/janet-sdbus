@@ -6,20 +6,6 @@
 #define janet_fstringv(cstr, ...)                                              \
   janet_wrap_string(janet_formatc(cstr, __VA_ARGS__))
 
-#define END_LISTENER(conn)                                                     \
-  do {                                                                         \
-    janet_schedule(conn->listener, janet_wrap_nil());                          \
-    janet_async_end(conn->listener);                                           \
-    conn->listener = NULL;                                                     \
-  } while (0)
-
-#define CANCEL_LISTENER(conn, msg)                                             \
-  do {                                                                         \
-    janet_cancel(conn->listener, msg);                                         \
-    janet_async_end(conn->listener);                                           \
-    conn->listener = NULL;                                                     \
-  } while (0)
-
 AsyncCall *create_async_call(JanetChannel *ch) {
   AsyncCall *call;
   if (!(call = janet_malloc(sizeof(AsyncCall))))
