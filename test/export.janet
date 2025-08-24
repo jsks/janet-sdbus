@@ -11,8 +11,10 @@
           :NoInput (sdbus/method :: "" -> "s" [] "Hello World!")
           :SideEffects (sdbus/method [])
           :Mismatch (sdbus/method :: "" -> "as" [] 1)
+          :Expected (sdbus/method :: "i" -> "i" [x])
           :Unexpected (sdbus/method [] "Hello World!")
           :Error (sdbus/method [] (error "Test error"))
+          :Suspend (sdbus/method :: "" -> "i" [] (ev/sleep 0.01) 1)
           :DoubleAcc (sdbus/method :: "ad" -> "d" [& args]
                                    (->> (map |(* 2 $) args) (reduce2 +)))
           :MultiLine (sdbus/method :: "i" -> "b" [x]
@@ -27,6 +29,9 @@
 (def result (sdbus/call-method ;interface "Example" "i" 10))
 (assert (= result 11))
 
+(def result (sdbus/call-method ;interface "Suspend"))
+(assert (= result 1))
+
 (def result (sdbus/call-method ;interface "DoubleAcc" "ad" @[1 2 3]))
 (assert (= result 12))
 
@@ -40,6 +45,7 @@
 (assert (nil? result))
 
 (assert-error "Mismatched signature" (sdbus/call-method ;interface "Mismatch"))
+(assert-error "Expected output" (sdbus/call-method ;interface "Expected"))
 (assert-error "Unexpected output" (sdbus/call-method ;interface "Unexpected"))
 (assert-error "Method throw" (sdbus/call-method ;interface "Error"))
 
@@ -51,6 +57,7 @@
 (def service [bus "/org/janet/ErrorCases" "org.janet.ErrorCases"])
 
 (assert-error "Empty interface" (sdbus/export ;service {}))
+
 (assert-error "Missing in-signature" (sdbus/export ;service {:x {:sig-in "s" :function (fn [])}}))
 (assert-error "Missing out-signature" (sdbus/export ;service {:x {:sig-out "s" :function (fn [])}}))
 (assert-error "Missing function" (sdbus/export ;service {:x {:sig-in "s" :sig-out "s"}}))
@@ -61,6 +68,7 @@
 (def flag-env {:Example (sdbus/method :: "i" -> "i" :h [x] x)
                :NoReply (sdbus/method :dn [])})
 
+(def flag-interface [bus "org.janet.UnitTests" "/org/janet/UnitTests" "org.janet.UnitTests"])
 (def flag-slot (sdbus/export bus "/org/janet/UnitTests" "org.janet.UnitTests" flag-env))
 
 (def tbl (sdbus/introspect bus "org.janet.UnitTests" "/org/janet/UnitTests"))
