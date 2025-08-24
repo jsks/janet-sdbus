@@ -108,6 +108,7 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
 
   CALL_SD_BUS_FUNC(sd_bus_call_async, conn->bus, call->slot, *msg_ptr,
                    message_handler, state, 0);
+  sd_bus_slot_set_floating(*call->slot, 1);
 
   uint64_t cookie;
   CALL_SD_BUS_FUNC(sd_bus_message_get_cookie, *msg_ptr, &cookie);

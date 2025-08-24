@@ -270,6 +270,7 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
 
   int rv = sd_bus_add_object_vtable(conn->bus, slot_ptr, path, interface,
                                     vtable, state);
+  sd_bus_slot_set_floating(*slot_ptr, 1);
   if (rv < 0) {
     FREE_STATE(state);
     janet_panicf("Failed to register D-Bus interface: %s", strerror(-rv));
