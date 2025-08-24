@@ -32,7 +32,7 @@ AsyncCall *create_async_call(JanetChannel *ch) {
 }
 
 bool is_listener_closeable(Conn *conn) {
-  return conn->listener && conn->subscribers == 0 &&
+  return !conn->gc && conn->listener && conn->subscribers == 0 &&
          (conn->queue == NULL || conn->queue->count == 0);
 }
 
@@ -44,14 +44,14 @@ void queue_call(Conn *conn, AsyncCall *call) {
 }
 
 void dequeue_call(Conn *conn, AsyncCall *call) {
-  if (!conn->queue)
+  if (!conn->queue || conn->gc)
     return;
 
   janet_table_remove(conn->queue, call->cookie);
 }
 
 static void closeall_pending_calls(Conn *conn, Janet msg) {
-  if (!conn->queue)
+  if (!conn->queue || conn->gc)
     return;
 
   Janet status     = janet_ckeywordv("error");

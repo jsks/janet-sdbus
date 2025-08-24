@@ -33,7 +33,19 @@ static JanetMethod dbus_bus_methods[] = {
 
 static int dbus_bus_gc(void *p, size_t size) {
   UNUSED(size);
-  sd_bus_flush_close_unref(((Conn *) p)->bus);
+  Conn *conn = (Conn *) p;
+
+  // Indicate to our sd-bus slot destroy callbacks that we're inside a
+  // gc sweep so we can avoid calling into the janet api.
+  conn->gc = true;
+
+  if (conn->stream) {
+    janet_stream_close(conn->stream);
+    conn->stream = NULL;
+  }
+
+  sd_bus_flush_close_unref(conn->bus);
+  sd_bus_unref(conn->bus);
 
   return 0;
 }
@@ -141,13 +153,12 @@ JANET_FN(cfun_close_bus, "(sdbus/close-bus bus)", "Close a D-Bus connection.") {
   janet_fixarity(argc, 1);
 
   Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
-  sd_bus_flush(conn->bus);
-  sd_bus_close(conn->bus);
-
   if (conn->stream) {
     janet_stream_close(conn->stream);
     conn->stream = NULL;
   }
+
+  sd_bus_flush_close_unref(conn->bus);
 
   return janet_wrap_nil();
 }
