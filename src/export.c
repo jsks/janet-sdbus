@@ -151,6 +151,8 @@ static void destroy_export_callback(void *userdata) {
 
   state->conn->subscribers--;
   FREE_STATE(state);
+  if (is_listener_closeable(state->conn))
+    END_LISTENER(state->conn);
 }
 
 static sd_bus_vtable create_vtable_method(const char *name, JanetStruct entry) {

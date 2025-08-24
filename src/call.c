@@ -44,6 +44,8 @@ static void destroy_call_callback(void *userdata) {
   dequeue_call(state->conn, state->call);
   janet_free(state->call);
   janet_free(state);
+  if (is_listener_closeable(state->conn))
+    END_LISTENER(state->conn);
 }
 
 static int message_handler(sd_bus_message *reply, void *userdata,
