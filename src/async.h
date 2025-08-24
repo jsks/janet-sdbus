@@ -4,8 +4,6 @@
 #ifndef _JANET_SDBUS_ASYNC_H
 #define _JANET_SDBUS_ASYNC_H
 
-#include <stdbool.h>
-
 #include "common.h"
 
 #define END_LISTENER(conn)                                                     \

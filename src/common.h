@@ -4,6 +4,7 @@
 #ifndef _JANET_SDBUS_COMMON_H
 #define _JANET_SDBUS_COMMON_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -28,6 +29,7 @@ typedef struct {
   JanetFiber *listener; // Polling callback fiber
   JanetTable *queue;    // Queue of pending async calls
   int subscribers;      // Number of published interfaces
+  bool gc;              // Whether the bus is being garbage collected
 } Conn;
 
 extern const JanetAbstractType dbus_bus_type;
