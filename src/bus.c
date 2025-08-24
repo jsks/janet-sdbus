@@ -78,17 +78,30 @@ static Janet dbus_bus_next(void *p, Janet key) {
 // Exported wrapper functions
 // -------------------------------------------------------------------
 
+#define OPEN_BUS_CORE(CALL)                                                    \
+  do {                                                                         \
+    Conn *conn = janet_abstract(&dbus_bus_type, sizeof(Conn));                 \
+    memset(conn, 0, sizeof(Conn));                                             \
+                                                                               \
+    CALL;                                                                      \
+    /* Don't let sd-bus automatically dereference our bus object. Only         \
+     * sdbus/close or the Janet gc should be able to close the bus.    */      \
+    sd_bus_ref(conn->bus);                                                     \
+                                                                               \
+    return janet_wrap_abstract(conn);                                          \
+  } while (0)
+
+#define OPEN_BUS0(fun) OPEN_BUS_CORE(CALL_SD_BUS_FUNC(fun, &conn->bus))
+
+#define OPEN_BUS1(fun, arg)                                                    \
+  OPEN_BUS_CORE(CALL_SD_BUS_FUNC(fun, &conn->bus, arg))
+
 JANET_FN(cfun_open_user_bus, "(sdbus/open-user-bus)",
          "Open a user D-Bus connection.") {
   UNUSED(argv);
   janet_fixarity(argc, 0);
 
-  Conn *conn = janet_abstract(&dbus_bus_type, sizeof(Conn));
-  memset(conn, 0, sizeof(Conn));
-
-  CALL_SD_BUS_FUNC(sd_bus_open_user, &conn->bus);
-
-  return janet_wrap_abstract(conn);
+  OPEN_BUS0(sd_bus_open_user);
 }
 
 JANET_FN(cfun_open_system_bus, "(sdbus/open-system-bus)",
@@ -96,12 +109,31 @@ JANET_FN(cfun_open_system_bus, "(sdbus/open-system-bus)",
   UNUSED(argv);
   janet_fixarity(argc, 0);
 
-  Conn *conn = janet_abstract(&dbus_bus_type, sizeof(Conn));
-  memset(conn, 0, sizeof(Conn));
+  OPEN_BUS0(sd_bus_open_system);
+}
 
-  CALL_SD_BUS_FUNC(sd_bus_open_system, &conn->bus);
+JANET_FN(cfun_open_user_machine, "(sdbus/open-user-machine)",
+         "Open a user D-Bus connection for a specific machine.") {
+  janet_fixarity(argc, 1);
 
-  return janet_wrap_abstract(conn);
+  const char *machine = janet_getcstring(argv, 0);
+  OPEN_BUS1(sd_bus_open_user_machine, machine);
+}
+
+JANET_FN(cfun_open_system_machine, "(sdbus/open-system-machine machine)",
+         "Open a system D-Bus connection for a specific machine.") {
+  janet_fixarity(argc, 1);
+
+  const char *machine = janet_getcstring(argv, 0);
+  OPEN_BUS1(sd_bus_open_system_machine, machine);
+}
+
+JANET_FN(cfun_open_system_remote, "(sdbus/open-system-remote machine)",
+         "Open a system D-Bus connection for a remote machine.") {
+  janet_fixarity(argc, 1);
+
+  const char *host = janet_getcstring(argv, 0);
+  OPEN_BUS1(sd_bus_open_system_remote, host);
 }
 
 // todo: documentation flushes outgoing, does not block for incoming
@@ -179,15 +211,6 @@ JANET_FN(cfun_list_names, "(sdbus/list-names bus)",
   return janet_wrap_array(list);
 }
 
-JanetRegExt cfuns_bus[] = { JANET_REG("open-user-bus", cfun_open_user_bus),
-                            JANET_REG("open-system-bus", cfun_open_system_bus),
-                            JANET_REG("close-bus", cfun_close_bus),
-                            JANET_REG("bus-is-open", cfun_bus_is_open),
-                            JANET_REG("get-unique-name", cfun_get_unique_name),
-                            JANET_REG("set-allow-interactive-authorization",
-                                      cfun_set_allow_interactive_authorization),
-                            JANET_REG("list-names", cfun_list_names),
-                            JANET_REG_END };
 JANET_FN(cfun_send, "(sdbus/send bus msg)", "Send a D-Bus message.") {
   janet_fixarity(argc, 2);
 
@@ -198,3 +221,19 @@ JANET_FN(cfun_send, "(sdbus/send bus msg)", "Send a D-Bus message.") {
 
   return janet_wrap_nil();
 }
+
+JanetRegExt cfuns_bus[] = {
+  JANET_REG("open-user-bus", cfun_open_user_bus),
+  JANET_REG("open-system-bus", cfun_open_system_bus),
+  JANET_REG("open-user-machine", cfun_open_user_machine),
+  JANET_REG("open-system-machine", cfun_open_system_machine),
+  JANET_REG("open-system-remote", cfun_open_system_remote),
+  JANET_REG("close-bus", cfun_close_bus),
+  JANET_REG("bus-is-open", cfun_bus_is_open),
+  JANET_REG("get-unique-name", cfun_get_unique_name),
+  JANET_REG("set-allow-interactive-authorization",
+            cfun_set_allow_interactive_authorization),
+  JANET_REG("list-names", cfun_list_names),
+  JANET_REG("send", cfun_send),
+  JANET_REG_END
+};
