@@ -87,23 +87,19 @@ static int method_handler(sd_bus_message *msg, void *userdata,
 
   Janet out, argv[] = { janet_wrap_abstract(msg_ptr) };
   Janet method =
-            janet_dictionary_get(env.kvs, env.cap, janet_ckeywordv(member)),
-        fun = struct_symget(janet_unwrap_struct(method), "function");
+      janet_dictionary_get(env.kvs, env.cap, janet_ckeywordv(member));
 
-  JanetSignal sig =
-      janet_pcall(janet_unwrap_function(fun), 1, argv, &out, NULL);
+  JanetFunction *f = janet_unwrap_function(struct_symget(method, "function"));
+
+  // Method function may yield to the event-loop and return
+  // JANET_SIGNAL_EVENT so let the fiber take care of sending the dbus
+  // reply or any possible error messages. Alternatively, we could
+  // block and wait on the method function fiber using a channel.
+  janet_pcall(f, 1, argv, &out, NULL);
 
   janet_gcunroot(janet_wrap_abstract(msg_ptr));
 
-  if (sig == JANET_SIGNAL_ERROR)
-    return sd_bus_error_setf(ret_error, "org.janet.error",
-                             "internal method error: %s",
-                             (char *) janet_to_string(out));
-
-  sd_bus_message **reply = janet_unwrap_abstract(out);
-  sd_bus_message_send(*reply);
-
-  return 0;
+  return 1;
 }
 
 typedef Janet (*invoke_obj_method)(int32_t, Janet *);

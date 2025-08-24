@@ -188,3 +188,13 @@ JanetRegExt cfuns_bus[] = { JANET_REG("open-user-bus", cfun_open_user_bus),
                                       cfun_set_allow_interactive_authorization),
                             JANET_REG("list-names", cfun_list_names),
                             JANET_REG_END };
+JANET_FN(cfun_send, "(sdbus/send bus msg)", "Send a D-Bus message.") {
+  janet_fixarity(argc, 2);
+
+  Conn *conn               = janet_getabstract(argv, 0, &dbus_bus_type);
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 1, &dbus_message_type);
+
+  CALL_SD_BUS_FUNC(sd_bus_send, conn->bus, *msg_ptr, NULL);
+
+  return janet_wrap_nil();
+}

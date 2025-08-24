@@ -96,14 +96,19 @@
    :getter (property-wrapper (fn [self reply] (message-append reply (self :sig) (self :value))))
    :setter (property-wrapper (fn [self msg] (set (self :value) (normalized-read msg))))})
 
+(defn- send-error [call err]
+  (def error-msg (message-new-method-error call "org.janet.error" err))
+  (message-send error-msg))
+
 (defn- method-wrapper [fun out-signature]
   (fn [msg]
-    (def args (normalized-read msg))
-    (def reply (message-new-method-return msg))
-    (def result (fun ;args))
-    (if-not (nil? result)
-      (message-append reply out-signature result))
-    reply))
+    (try (do
+           (def reply (message-new-method-return msg))
+           (def result (fun ;(normalized-read msg)))
+           (if-not (nil? result)
+             (message-append reply out-signature result))
+           (message-send reply))
+      ([err fiber] (send-error msg err) (propagate err fiber)))))
 
 (defn create-method [fun &named in-sig out-sig flags]
   ```
