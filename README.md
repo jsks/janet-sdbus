@@ -1,3 +1,5 @@
+![ci workflow](https://github.com/jsks/janet-sdbus/actions/workflows/ci.yml/badge.svg)
+
 Janet bindings to [sd-bus](https://www.freedesktop.org/software/systemd/man/latest/sd-bus.html).
 
 ```janet
@@ -14,7 +16,7 @@ Janet bindings to [sd-bus](https://www.freedesktop.org/software/systemd/man/late
 
 ### Installation
 
-Note, this project is currently in an alpha stage and can only be built against the latest master branch of [Janet](https://github.com/janet-lang/janet).
+This project requires Janet `>=1.39.0`, libsystemd, and pkg-config.
 
 ```
 $ jpm install https://github.com/jsks/janet-sdbus
