@@ -470,11 +470,13 @@ JANET_FN(
   const char *interface   = janet_getcstring(argv, 3);
   const char *member      = janet_getcstring(argv, 4);
 
+  sd_bus_message *msg = NULL;
+  CALL_SD_BUS_FUNC(sd_bus_message_new_method_call, conn->bus, &msg, destination,
+                   path, interface, member);
+
   sd_bus_message **msg_ptr =
       janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
-
-  CALL_SD_BUS_FUNC(sd_bus_message_new_method_call, conn->bus, msg_ptr,
-                   destination, path, interface, member);
+  *msg_ptr = msg;
 
   return janet_wrap_abstract(msg_ptr);
 }
@@ -486,10 +488,12 @@ JANET_FN(cfun_message_new_method_return,
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
 
+  sd_bus_message *reply = NULL;
+  CALL_SD_BUS_FUNC(sd_bus_message_new_method_return, *msg_ptr, &reply);
+
   sd_bus_message **reply_ptr =
       janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
-
-  CALL_SD_BUS_FUNC(sd_bus_message_new_method_return, *msg_ptr, reply_ptr);
+  *reply_ptr = reply;
 
   return janet_wrap_abstract(reply_ptr);
 }
@@ -504,11 +508,13 @@ JANET_FN(cfun_message_new_method_error,
   const char *name      = janet_getcstring(argv, 1);
   const char *message   = janet_getcstring(argv, 2);
 
-  sd_bus_error error = SD_BUS_ERROR_MAKE_CONST(name, message);
+  sd_bus_error error    = SD_BUS_ERROR_MAKE_CONST(name, message);
+  sd_bus_message *reply = NULL;
+  CALL_SD_BUS_FUNC(sd_bus_message_new_method_error, *call, &reply, &error);
+
   sd_bus_message **reply_ptr =
       janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
-
-  CALL_SD_BUS_FUNC(sd_bus_message_new_method_error, *call, reply_ptr, &error);
+  *reply_ptr = reply;
 
   return janet_wrap_abstract(reply_ptr);
 }
