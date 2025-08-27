@@ -47,7 +47,7 @@ static JanetString format_error(sd_bus_error *error) {
 static void destroy_call_callback(void *userdata) {
   AsyncCallbackState *state = userdata;
 
-  dequeue_call(state->conn, state->call);
+  dequeue_call(&state->conn->queue, state->call);
   if (is_listener_closeable(state->conn))
     END_LISTENER(state->conn);
 
@@ -62,7 +62,7 @@ static int message_handler(sd_bus_message *reply, void *userdata,
   Conn *conn                = state->conn;
   AsyncCall *call           = state->call;
 
-  dequeue_call(conn, call);
+  dequeue_call(&conn->queue, call);
 
   Janet status, value;
   if (sd_bus_message_is_method_error(reply, NULL)) {
@@ -127,7 +127,7 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
   sd_bus_message_get_cookie(*msg_ptr, &cookie);
   call->cookie = janet_wrap_u64(cookie);
 
-  queue_call(conn, call);
+  queue_call(&conn->queue, call);
   sd_bus_slot_set_destroy_callback(*call->slot, destroy_call_callback);
   start_async_listener(conn);
 

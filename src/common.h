@@ -24,12 +24,12 @@ int check_sd_bus_return(const char *, int);
 
 // D-Bus bus connection
 typedef struct {
-  sd_bus *bus;          // D-Bus message bus
-  JanetStream *stream;  // Unix fd for bus connection
-  JanetFiber *listener; // Polling callback fiber
-  JanetTable *queue;    // Queue of pending async calls
-  int subscribers;      // Number of published interfaces
-  bool gc;              // Whether the bus is being garbage collected
+  sd_bus *bus;             // D-Bus message bus
+  JanetStream *stream;     // Unix fd for bus connection
+  JanetFiber *listener;    // Polling callback fiber
+  struct AsyncCall *queue; // Queue of pending async calls
+  int subscribers;         // Number of published interfaces
+  bool gc;                 // Whether the bus is being garbage collected
 } Conn;
 
 extern const JanetAbstractType dbus_bus_type;

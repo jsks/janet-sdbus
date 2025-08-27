@@ -19,22 +19,27 @@ AsyncCall *create_async_call(JanetChannel *ch) {
 }
 
 bool is_listener_closeable(Conn *conn) {
-  return !conn->gc && conn->listener && conn->subscribers == 0 &&
-         (conn->queue == NULL || conn->queue->count == 0);
+  return !conn->gc && conn->listener && conn->subscribers == 0 && !conn->queue;
 }
 
-void queue_call(Conn *conn, AsyncCall *call) {
-  if (!conn->queue)
-    conn->queue = janet_table(1);
+void queue_call(AsyncCall **head, AsyncCall *call) {
+  call->prev = NULL;
+  call->next = *head;
 
-  janet_table_put(conn->queue, call->cookie, janet_wrap_pointer(call));
+  if (*head)
+    (*head)->prev = call;
+
+  *head = call;
 }
 
-void dequeue_call(Conn *conn, AsyncCall *call) {
-  if (!conn->queue || conn->gc)
-    return;
+void dequeue_call(AsyncCall **head, AsyncCall *call) {
+  if (call->prev)
+    call->prev->next = call->next;
+  else
+    *head = call->next;
 
-  janet_table_remove(conn->queue, call->cookie);
+  if (call->next)
+    call->next->prev = call->prev;
 }
 
 static void closeall_pending_calls(Conn *conn, Janet msg) {
@@ -44,17 +49,13 @@ static void closeall_pending_calls(Conn *conn, Janet msg) {
   Janet status     = janet_ckeywordv("error");
   JanetTuple tuple = janet_tuple_n((Janet[]) { status, msg }, 2);
 
-  const JanetKV *kvs = conn->queue->data, *kv = NULL;
-  int32_t cap = conn->queue->capacity;
-  while ((kv = janet_dictionary_next(kvs, cap, kv))) {
-    AsyncCall *call = janet_unwrap_abstract(kv->value);
+  AsyncCall *p = conn->queue;
+  do {
+    janet_channel_give(p->chan, janet_wrap_tuple(tuple));
 
-    janet_channel_give(call->chan, janet_wrap_tuple(tuple));
-    sd_bus_slot_unrefp(call->slot);
-    *call->slot = NULL;
-  }
-
-  janet_table_clear(conn->queue);
+    sd_bus_slot_unrefp(p->slot);
+    *p->slot = NULL;
+  } while ((p = p->next));
 }
 
 static void bus_process_driver(JanetFiber *fiber, JanetAsyncEvent event) {
