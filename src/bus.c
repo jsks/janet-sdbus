@@ -45,7 +45,6 @@ static int dbus_bus_gc(void *p, size_t size) {
   }
 
   sd_bus_flush_close_unref(conn->bus);
-  sd_bus_unref(conn->bus);
 
   return 0;
 }
@@ -96,9 +95,6 @@ static Janet dbus_bus_next(void *p, Janet key) {
     memset(conn, 0, sizeof(Conn));                                             \
                                                                                \
     CALL;                                                                      \
-    /* Don't let sd-bus automatically dereference our bus object. Only         \
-     * sdbus/close or the Janet gc should be able to close the bus.    */      \
-    sd_bus_ref(conn->bus);                                                     \
                                                                                \
     return janet_wrap_abstract(conn);                                          \
   } while (0)
@@ -159,6 +155,7 @@ JANET_FN(cfun_close_bus, "(sdbus/close-bus bus)", "Close a D-Bus connection.") {
   }
 
   sd_bus_flush_close_unref(conn->bus);
+  conn->bus = NULL;
 
   return janet_wrap_nil();
 }
