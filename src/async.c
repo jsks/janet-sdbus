@@ -95,6 +95,8 @@ static void bus_process_driver(JanetFiber *fiber, JanetAsyncEvent event) {
     default:
       break;
   }
+}
+
 void start_async_listener(Conn *conn) {
   if (conn->listener && janet_fiber_status(conn->listener) != JANET_STATUS_DEAD)
     return;
