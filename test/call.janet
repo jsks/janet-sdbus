@@ -20,4 +20,6 @@
 (assert-error "Missing method" (sdbus/call-method ;interface "FakeMethod"))
 (assert-error "Missing signature" (sdbus/call-method ;interface "GetConnectionUnixUser"))
 
+(sdbus/close-bus bus)
+
 (end-suite)

@@ -152,9 +152,6 @@ static void destroy_export_callback(void *userdata) {
   ExportCallbackState *state = userdata;
 
   state->conn->subscribers--;
-  if (is_listener_closeable(state->conn))
-    END_LISTENER(state->conn);
-
   FREE_EXPORT_STATE(state);
 }
 

@@ -35,10 +35,6 @@ static int dbus_bus_gc(void *p, size_t size) {
   UNUSED(size);
   Conn *conn = (Conn *) p;
 
-  // Indicate to our sd-bus slot destroy callbacks that we're inside a
-  // gc sweep so we can avoid calling into the janet api.
-  conn->gc = true;
-
   if (conn->stream) {
     janet_stream_close(conn->stream);
     conn->stream = NULL;
@@ -58,9 +54,6 @@ static int dbus_bus_gcmark(void *p, size_t size) {
 
   if (conn->listener)
     janet_mark(janet_wrap_fiber(conn->listener));
-
-  if (conn->queue)
-    janet_mark(janet_wrap_table(conn->queue));
 
   return 0;
 }

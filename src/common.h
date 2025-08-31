@@ -29,7 +29,6 @@ typedef struct {
   JanetFiber *listener;    // Polling callback fiber
   struct AsyncCall *queue; // Queue of pending async calls
   int subscribers;         // Number of published interfaces
-  bool gc;                 // Whether the bus is being garbage collected
 } Conn;
 
 extern const JanetAbstractType dbus_bus_type;

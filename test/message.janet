@@ -90,4 +90,6 @@
 (assert-error "Missing arguments" (from-message "ii" 1))
 (assert-error "Excessive arguments" (from-message "ii" 1 2 3))
 
+(sdbus/close-bus (dyn :bus))
+
 (end-suite)

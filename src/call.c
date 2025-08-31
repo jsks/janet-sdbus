@@ -48,9 +48,6 @@ static void destroy_call_callback(void *userdata) {
   AsyncCallbackState *state = userdata;
 
   dequeue_call(&state->conn->queue, state->call);
-  if (is_listener_closeable(state->conn))
-    END_LISTENER(state->conn);
-
   FREE_CALL_STATE(state);
 }
 
@@ -108,7 +105,6 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
 
   AsyncCall *call = create_async_call(ch);
 
-  // TODO: free if sd_bus_call_async or sd_bus_message_get_cookie fails
   AsyncCallbackState *state;
   if (!(state = janet_malloc(sizeof(AsyncCallbackState))))
     JANET_OUT_OF_MEMORY;
@@ -122,10 +118,6 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
   }
 
   sd_bus_slot_set_floating(*call->slot, 1);
-
-  uint64_t cookie;
-  sd_bus_message_get_cookie(*msg_ptr, &cookie);
-  call->cookie = janet_wrap_u64(cookie);
 
   queue_call(&conn->queue, call);
   sd_bus_slot_set_destroy_callback(*call->slot, destroy_call_callback);

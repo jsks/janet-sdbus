@@ -21,14 +21,12 @@
   } while (0)
 
 typedef struct AsyncCall {
-  Janet cookie;
   sd_bus_slot **slot;
   JanetChannel *chan;
   struct AsyncCall *next, *prev;
 } AsyncCall;
 
 AsyncCall *create_async_call(JanetChannel *);
-bool is_listener_closeable(Conn *);
 void queue_call(AsyncCall **, AsyncCall *);
 void dequeue_call(AsyncCall **, AsyncCall *);
 void start_async_listener(Conn *);

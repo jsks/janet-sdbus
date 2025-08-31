@@ -28,7 +28,6 @@
 (do
   (setup)
   (set *ch* ch))
-(gccollect)
 (assert (= (ev/count *ch*) 0))
 
 (do
@@ -77,4 +76,5 @@
                                                       "org.freedesktop.DBus"
                                                       "ListNames")))
 
+(gccollect)
 (end-suite)

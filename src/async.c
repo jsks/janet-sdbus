@@ -18,10 +18,6 @@ AsyncCall *create_async_call(JanetChannel *ch) {
   return call;
 }
 
-bool is_listener_closeable(Conn *conn) {
-  return !conn->gc && conn->listener && conn->subscribers == 0 && !conn->queue;
-}
-
 void queue_call(AsyncCall **head, AsyncCall *call) {
   call->prev = NULL;
   call->next = *head;
@@ -43,7 +39,7 @@ void dequeue_call(AsyncCall **head, AsyncCall *call) {
 }
 
 static void closeall_pending_calls(Conn *conn, Janet msg) {
-  if (!conn->queue || conn->gc)
+  if (!conn->queue)
     return;
 
   Janet status     = janet_ckeywordv("error");
@@ -99,14 +95,6 @@ static void bus_process_driver(JanetFiber *fiber, JanetAsyncEvent event) {
     default:
       break;
   }
-
-  // Ideally we would keep the listener fiber up and avoid restarting
-  // on the next call; however, a running event-loop task in Janet
-  // blocks program exit.
-  if (is_listener_closeable(conn))
-    END_LISTENER(conn);
-}
-
 void start_async_listener(Conn *conn) {
   if (conn->listener && janet_fiber_status(conn->listener) != JANET_STATUS_DEAD)
     return;
