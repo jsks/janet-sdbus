@@ -23,9 +23,6 @@
        (filter |(some-suffix? $ ;suffixes))))
 
 ### CFLAGS/LDFLAGS
-(when (= (dyn :build-type) "debug")
-  (setdyn :optimize 0))
-
 (def sanitizer-cflags
   (if (= (dyn :build-type) "debug")
     ["-fsanitize=address" "-fno-omit-frame-pointer"]
@@ -40,7 +37,7 @@
 ### Source files
 (declare-source
   :prefix "sdbus"
-  :source ["init.janet" "introspect.janet"])
+  :source ["base.janet" "init.janet" "introspect.janet" "proxy.janet"])
 
 (declare-native
   :name "sdbus/native"
