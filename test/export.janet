@@ -71,18 +71,16 @@
 (def flag-interface [bus "org.janet.UnitTests" "/org/janet/UnitTests" "org.janet.UnitTests"])
 (def flag-slot (sdbus/export bus "/org/janet/UnitTests" "org.janet.UnitTests" flag-env))
 
-(def tbl (sdbus/introspect bus "org.janet.UnitTests" "/org/janet/UnitTests"))
-(def services (-> (find |(= (get-in $ [:attributes :name]) "org.janet.UnitTests") tbl)
-                  (get :children)))
-(assert (= (length services) 1))
-(assert (= (get-in (services 0) [:attributes :name]) "NoReply"))
+(def spec (sdbus/introspect bus "org.janet.UnitTests" "/org/janet/UnitTests"))
+(def members (get-in spec [:interfaces :org.janet.UnitTests :members]))
 
-(each child (get (services 0) :children)
-  (assert (= (get child :tag) "annotation"))
-  (assert (= (get-in child [:attributes :value]) "true"))
-  (let [name (get-in child [:attributes :name])]
-    (assert (or (= name "org.freedesktop.DBus.Deprecated")
-                (= name "org.freedesktop.DBus.Method.NoReply")))))
+(assert (= (length members) 1))
+(assert (= (first (keys members)) :NoReply))
+
+(def annotations (get-in members [:NoReply :annotations]))
+(assert (= (length annotations) 2))
+(assert (deep= annotations @[{:org.freedesktop.DBus.Deprecated "true"}
+                             {:org.freedesktop.DBus.Method.NoReply "true"}]))
 
 (def flag-interface [bus "org.janet.UnitTests" "/org/janet/UnitTests" "org.janet.UnitTests"])
 (assert (= (sdbus/call-method ;flag-interface "Example" "i" 10) 10))

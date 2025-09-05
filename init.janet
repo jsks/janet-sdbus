@@ -30,7 +30,7 @@
   ```
   [bus destination path]
   (-> (call-method bus destination path "org.freedesktop.DBus.Introspectable" "Introspect")
-      parse-xml))
+      (parse-xml :destination destination :path path)))
 
 (defn get-property
   ```
