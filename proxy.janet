@@ -3,6 +3,8 @@
 
 (import ./base :prefix "" :export false)
 
+(defn- second [x] (get x 1))
+
 (defn- proxy-method [name method]
   (def sig (-> (map |(get $ :type) (get method :in)) (string/join)))
   (fn [self & args]
@@ -22,7 +24,7 @@
           interface (self :interface)
           name (string name)]
       (if (nil? value)
-        (get-property bus destination path interface name)
+        (-> (get-property bus destination path interface name) second)
         (set-property bus destination path interface name [sig value])))))
 
 (defn- proxy-members [members]

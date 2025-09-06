@@ -19,9 +19,12 @@ typedef struct {
   sd_bus_vtable *vtable;
 } ExportCallbackState;
 
-static Janet struct_symget(Janet st, const char *key) {
-  Janet sym   = janet_ckeywordv(key);
-  Janet value = janet_struct_rawget(janet_unwrap_struct(st), sym);
+static Janet dict_symget(Janet dict, const char *key) {
+  JanetDictView view;
+  janet_dictionary_view(dict, &view.kvs, &view.len, &view.cap);
+
+  Janet sym = janet_ckeywordv(key);
+  Janet value = janet_dictionary_get(view.kvs, view.cap, sym);
   if (janet_checktype(value, JANET_NIL))
     janet_panicf("Missing required field: %s", key);
 
@@ -91,7 +94,7 @@ static int method_handler(sd_bus_message *msg, void *userdata,
   Janet method =
       janet_dictionary_get(env.kvs, env.cap, janet_ckeywordv(member));
 
-  JanetFunction *f = janet_unwrap_function(struct_symget(method, "function"));
+  JanetFunction *f = janet_unwrap_function(dict_symget(method, "function"));
 
   // Method function may yield to the event-loop and return
   // JANET_SIGNAL_EVENT so let the fiber take care of sending the dbus
@@ -104,9 +107,7 @@ static int method_handler(sd_bus_message *msg, void *userdata,
   return 1;
 }
 
-typedef Janet (*invoke_obj_method)(int32_t, Janet *);
-
-static int property_handler_core(const char *property, invoke_obj_method method,
+static int property_handler_core(const char *property, const char *method,
                                  sd_bus_message *msg, void *userdata,
                                  sd_bus_error *ret_error) {
   ExportCallbackState *state = userdata;
@@ -116,24 +117,33 @@ static int property_handler_core(const char *property, invoke_obj_method method,
   Janet prop =
       janet_dictionary_get(env.kvs, env.cap, janet_ckeywordv(property));
 
+  // When getting a property, `msg` is the reply, otherwise when
+  // setting a property it is the value payload.
   sd_bus_message **msg_ptr =
       janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
   *msg_ptr = sd_bus_message_ref(msg);
 
-  Janet result = method(2, (Janet[]) { prop, janet_wrap_abstract(msg_ptr) });
-  if (janet_checktype(result, JANET_NIL))
+  janet_gcroot(janet_wrap_abstract(msg_ptr));
+
+  Janet out, argv[] = { prop, janet_wrap_abstract(msg_ptr) };
+  JanetFunction *f = janet_unwrap_function(dict_symget(prop, method));
+
+  // Normally we'd invoke an object method with `janet_mcall`;
+  // however, the present function is run from inside the async
+  // listener scheduled on the event-loop.
+  JanetSignal signal = janet_pcall(f, 2, argv, &out, NULL);
+
+  janet_gcunroot(janet_wrap_abstract(msg_ptr));
+
+  if (signal == JANET_SIGNAL_ERROR)
     return sd_bus_error_setf(ret_error, "org.janet.error",
                              "internal property error: %s",
-                             (char *) janet_to_string(result));
+                             (char *) janet_to_string(out));
 
   return 0;
 }
 
 #define DEFINE_PROPERTY_HANDLER(suffix, method_str)                            \
-  static Janet invoke_obj_method_##suffix(int32_t argc, Janet *argv) {         \
-    return janet_mcall(method_str, argc, argv);                                \
-  }                                                                            \
-                                                                               \
   static int property_handler_##suffix(                                        \
       sd_bus *bus, const char *path, const char *interface,                    \
       const char *property, sd_bus_message *msg, void *userdata,               \
@@ -141,7 +151,7 @@ static int property_handler_core(const char *property, invoke_obj_method method,
     UNUSED(bus);                                                               \
     UNUSED(path);                                                              \
     UNUSED(interface);                                                         \
-    return property_handler_core(property, invoke_obj_method_##suffix, msg,    \
+    return property_handler_core(property, method_str, msg,    \
                                  userdata, ret_error);                         \
   }
 
@@ -156,14 +166,14 @@ static void destroy_export_callback(void *userdata) {
 }
 
 static sd_bus_vtable create_vtable_method(const char *name, Janet entry) {
-  const char *in  = cstr(struct_symget(entry, "sig-in")),
-             *out = cstr(struct_symget(entry, "sig-out"));
+  const char *in  = cstr(dict_symget(entry, "sig-in")),
+             *out = cstr(dict_symget(entry, "sig-out"));
 
-  Janet fun = struct_symget(entry, "function");
+  Janet fun = dict_symget(entry, "function");
   if (!janet_checktype(fun, JANET_FUNCTION))
     janet_panicf("Expected function for method: %s", name);
 
-  Janet flags       = struct_symget(entry, "flags");
+  Janet flags       = dict_symget(entry, "flags");
   JanetKeyword keys = janet_unwrap_keyword(flags);
   uint64_t mask     = sd_bus_flags(keys);
 
@@ -171,13 +181,13 @@ static sd_bus_vtable create_vtable_method(const char *name, Janet entry) {
 }
 
 static sd_bus_vtable create_vtable_property(const char *name, Janet entry) {
-  const char *sig = cstr(struct_symget(entry, "sig"));
+  const char *sig = cstr(dict_symget(entry, "sig"));
 
-  Janet flags       = struct_symget(entry, "flags");
+  Janet flags       = dict_symget(entry, "flags");
   JanetKeyword keys = janet_unwrap_keyword(flags);
   uint64_t mask     = sd_bus_flags(keys);
 
-  Janet writable = struct_symget(entry, "writable");
+  Janet writable = dict_symget(entry, "writable");
   sd_bus_vtable property;
   if (janet_unwrap_boolean(writable))
     property = (sd_bus_vtable) SD_BUS_WRITABLE_PROPERTY(
@@ -190,9 +200,9 @@ static sd_bus_vtable create_vtable_property(const char *name, Janet entry) {
 }
 
 static sd_bus_vtable create_vtable_signal(const char *name, Janet entry) {
-  const char *sig = cstr(struct_symget(entry, "sig"));
+  const char *sig = cstr(dict_symget(entry, "sig"));
 
-  Janet flags       = struct_symget(entry, "flags");
+  Janet flags       = dict_symget(entry, "flags");
   JanetKeyword keys = janet_unwrap_keyword(flags);
   uint64_t mask     = sd_bus_flags(keys);
 
@@ -213,7 +223,7 @@ static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
     if (sd_bus_member_name_is_valid(member) == 0)
       janet_panicf("Invalid D-Bus method name: %s", member);
 
-    Janet type = struct_symget(kv->value, "type");
+    Janet type = dict_symget(kv->value, "type");
     if (janet_symeq(type, "method"))
       vtable[++i] = create_vtable_method(member, kv->value);
     else if (janet_symeq(type, "property"))

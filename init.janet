@@ -50,13 +50,13 @@
   (default flags "")
   (when (not (string/check-set :dhsreixw flags))
     (errorf "Invalid property flags: %s" flags))
-  {:type 'property
-   :flags flags
-   :writable (string/check-set flags :w)
-   :sig sig
-   :value value
-   :getter (property-wrapper (fn [self reply] (message-append reply (self :sig) (self :value))))
-   :setter (property-wrapper (fn [self msg] (set (self :value) (normalized-read msg))))})
+  @{:type 'property
+    :flags flags
+    :writable (string/check-set flags :w)
+    :sig sig
+    :value value
+    :getter (property-wrapper (fn [self reply] (message-append reply (self :sig) (self :value))))
+    :setter (property-wrapper (fn [self msg] (set (self :value) (first (normalized-read msg)))))})
 
 (defn- send-error [call err]
   (def error-msg (message-new-method-error call "org.janet.error" err))
