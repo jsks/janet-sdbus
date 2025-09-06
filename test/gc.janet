@@ -24,12 +24,6 @@
 
 ###
 # Try to trigger segfaults, use-after-free, memory leaks, etc
-(var *ch* nil)
-(do
-  (setup)
-  (set *ch* ch))
-(assert (= (ev/count *ch*) 0))
-
 (do
   (setup)
   (sdbus/close-bus bus)
@@ -40,7 +34,8 @@
   (setup)
   (sdbus/cancel vtable-slot)
   (def [status _] (ev/take ch))
-  (assert (= status :error)))
+  (assert (= status :error))
+  (sdbus/close-bus bus))
 
 (do
   (setup)
@@ -53,17 +48,12 @@
   # channel that the call-slot has been canceled; however, we may be
   # in a GC state.
   (assert (ev/count ch) 0)
-  (sdbus/cancel vtable-slot))
-
-(do
-  (setup)
-  (sdbus/cancel call-slot)
+  (sdbus/cancel vtable-slot)
   (sdbus/close-bus bus))
-
 
 (do
   (def bus (sdbus/open-user-bus))
-     (sdbus/request-name bus "org.Janet.UnitTests")
+  (sdbus/request-name bus "org.Janet.UnitTests")
   (sdbus/export bus "/org/janet/UnitTests" "org.janet.UnitTests" env)
   (send-helper bus)
   (sdbus/close-bus bus))

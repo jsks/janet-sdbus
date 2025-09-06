@@ -35,11 +35,6 @@ static int dbus_bus_gc(void *p, size_t size) {
   UNUSED(size);
   Conn *conn = (Conn *) p;
 
-  if (conn->stream) {
-    janet_stream_close(conn->stream);
-    conn->stream = NULL;
-  }
-
   sd_bus_flush_close_unref(conn->bus);
 
   return 0;
