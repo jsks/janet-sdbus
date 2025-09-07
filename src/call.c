@@ -46,8 +46,8 @@ static JanetString format_error(sd_bus_error *error) {
 
 static void destroy_call_callback(void *userdata) {
   AsyncCallbackState *state = userdata;
-
   dequeue_call(&state->conn->queue, state->call);
+
   FREE_CALL_STATE(state);
 }
 
@@ -97,11 +97,12 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
          "channel, `chan`. Result will be a tuple containing a status\n"
          "and value, either\n `[:error value]` indicating an error or\n"
          "`[:ok value]`. \n\n") {
-  janet_fixarity(argc, 3);
+  janet_arity(argc, 3, 4);
 
   Conn *conn               = janet_getabstract(argv, 0, &dbus_bus_type);
   sd_bus_message **msg_ptr = janet_getabstract(argv, 1, &dbus_message_type);
   JanetChannel *ch         = janet_getabstract(argv, 2, &janet_channel_type);
+  uint64_t timeout         = janet_optinteger64(argv, argc, 3, 0);
 
   AsyncCall *call = create_async_call(ch);
 
@@ -111,7 +112,7 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
   *state = (AsyncCallbackState) { .conn = conn, .call = call };
 
   int rv = sd_bus_call_async(conn->bus, call->slot, *msg_ptr, message_handler,
-                             state, 0);
+                             state, timeout);
   if (rv < 0) {
     FREE_CALL_STATE(state);
     janet_panicf("failed to call sd_bus_call_async: %s", strerror(-rv));
@@ -121,7 +122,6 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
 
   queue_call(&conn->queue, call);
   sd_bus_slot_set_destroy_callback(*call->slot, destroy_call_callback);
-  start_async_listener(conn);
 
   return janet_wrap_abstract(call->slot);
 }

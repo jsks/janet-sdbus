@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 Joshua Krusell
 
+#include "async.h"
 #include "common.h"
 
 // -------------------------------------------------------------------
@@ -44,11 +45,11 @@ static int dbus_bus_gcmark(void *p, size_t size) {
   UNUSED(size);
 
   Conn *conn = (Conn *) p;
-  if (conn->stream)
-    janet_mark(janet_wrap_abstract(conn->stream));
+  if (conn->bus_stream)
+    janet_mark(janet_wrap_abstract(conn->bus_stream));
 
-  if (conn->listener)
-    janet_mark(janet_wrap_fiber(conn->listener));
+  if (conn->timer)
+    janet_mark(janet_wrap_abstract(conn->timer));
 
   return 0;
 }
@@ -83,6 +84,7 @@ static Janet dbus_bus_next(void *p, Janet key) {
     memset(conn, 0, sizeof(Conn));                                             \
                                                                                \
     CALL;                                                                      \
+    init_async(conn);                                                          \
                                                                                \
     return janet_wrap_abstract(conn);                                          \
   } while (0)
@@ -137,9 +139,14 @@ JANET_FN(cfun_close_bus, "(sdbus/close-bus bus)", "Close a D-Bus connection.") {
   janet_fixarity(argc, 1);
 
   Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
-  if (conn->stream) {
-    janet_stream_close(conn->stream);
-    conn->stream = NULL;
+  if (conn->bus_stream) {
+    janet_stream_close(conn->bus_stream);
+    conn->bus_stream = NULL;
+  }
+
+  if (conn->timer) {
+    janet_stream_close(conn->timer);
+    conn->timer = NULL;
   }
 
   sd_bus_flush_close_unref(conn->bus);

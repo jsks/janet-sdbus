@@ -25,10 +25,9 @@ int check_sd_bus_return(const char *, int);
 // D-Bus bus connection
 typedef struct {
   sd_bus *bus;             // D-Bus message bus
-  JanetStream *stream;     // Unix fd for bus connection
-  JanetFiber *listener;    // Polling callback fiber
+  JanetStream *bus_stream; // Unix fd for bus connection
+  JanetStream *timer;      // Timer fd for bus timeouts
   struct AsyncCall *queue; // Queue of pending async calls
-  int subscribers;         // Number of published interfaces
 } Conn;
 
 extern const JanetAbstractType dbus_bus_type;

@@ -23,7 +23,7 @@ static Janet dict_symget(Janet dict, const char *key) {
   JanetDictView view;
   janet_dictionary_view(dict, &view.kvs, &view.len, &view.cap);
 
-  Janet sym = janet_ckeywordv(key);
+  Janet sym   = janet_ckeywordv(key);
   Janet value = janet_dictionary_get(view.kvs, view.cap, sym);
   if (janet_checktype(value, JANET_NIL))
     janet_panicf("Missing required field: %s", key);
@@ -151,8 +151,8 @@ static int property_handler_core(const char *property, const char *method,
     UNUSED(bus);                                                               \
     UNUSED(path);                                                              \
     UNUSED(interface);                                                         \
-    return property_handler_core(property, method_str, msg,    \
-                                 userdata, ret_error);                         \
+    return property_handler_core(property, method_str, msg, userdata,          \
+                                 ret_error);                                   \
   }
 
 DEFINE_PROPERTY_HANDLER(get, "getter")
@@ -161,7 +161,6 @@ DEFINE_PROPERTY_HANDLER(set, "setter")
 static void destroy_export_callback(void *userdata) {
   ExportCallbackState *state = userdata;
 
-  state->conn->subscribers--;
   FREE_EXPORT_STATE(state);
 }
 
@@ -288,8 +287,6 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
   }
 
   sd_bus_slot_set_destroy_callback(*slot_ptr, destroy_export_callback);
-  start_async_listener(conn);
-  conn->subscribers++;
 
   return janet_wrap_abstract(slot_ptr);
 }

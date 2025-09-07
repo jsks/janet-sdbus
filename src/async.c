@@ -2,9 +2,64 @@
 // Copyright (c) 2025 Joshua Krusell
 
 #include "async.h"
+#include "common.h"
 
 #define janet_fstringv(cstr, ...)                                              \
   janet_wrap_string(janet_formatc(cstr, __VA_ARGS__))
+
+void settimeout(Conn *);
+void setevents(Conn *);
+
+static void process_bus(Conn *conn) {
+  int rv;
+  while ((rv = sd_bus_process(conn->bus, NULL)) > 0) {
+  }
+
+  if (rv < 0)
+    janet_panicf("failed to call sd_bus_process: %s", strerror(-rv));
+
+  setevents(conn);
+  settimeout(conn);
+}
+
+void settimeout(Conn *conn) {
+  uint64_t usec = 0;
+  CALL_SD_BUS_FUNC(sd_bus_get_timeout, conn->bus, &usec);
+
+  if (usec == 0)
+    return process_bus(conn);
+
+  struct itimerspec new_value = { 0 };
+  if (usec != UINT64_MAX) {
+    new_value.it_value.tv_sec  = usec / 1000000;
+    new_value.it_value.tv_nsec = (usec % 1000000) * 1000;
+  }
+
+  if (timerfd_settime(conn->timer->handle, TFD_TIMER_ABSTIME, &new_value,
+                      NULL) == -1)
+    janet_panicf("timerfd_settime: %s", strerror(errno));
+}
+
+static uint32_t getevents(sd_bus *bus) {
+  int events = CALL_SD_BUS_FUNC(sd_bus_get_events, bus);
+
+  uint32_t flags = 0;
+  if (events & POLLIN)
+    flags |= JANET_STREAM_READABLE;
+  if (events & POLLOUT)
+    flags |= JANET_STREAM_WRITABLE;
+
+  return flags;
+}
+
+void setevents(Conn *conn) {
+  uint32_t newflags       = getevents(conn->bus);
+  conn->bus_stream->flags = (conn->bus_stream->flags &
+                             ~(JANET_STREAM_READABLE | JANET_STREAM_WRITABLE)) |
+                            newflags;
+
+  janet_stream_edge_triggered(conn->bus_stream);
+}
 
 AsyncCall *create_async_call(JanetChannel *ch) {
   AsyncCall *call;
@@ -29,6 +84,9 @@ void queue_call(AsyncCall **head, AsyncCall *call) {
 }
 
 void dequeue_call(AsyncCall **head, AsyncCall *call) {
+  if (!head)
+    return;
+
   if (call->prev)
     call->prev->next = call->next;
   else
@@ -52,34 +110,46 @@ static void closeall_pending_calls(Conn *conn, Janet msg) {
     sd_bus_slot_unrefp(p->slot);
     *p->slot = NULL;
   } while ((p = p->next));
+
+  conn->queue = NULL;
 }
 
-static void bus_process_driver(JanetFiber *fiber, JanetAsyncEvent event) {
+static void timer_callback(JanetFiber *fiber, JanetAsyncEvent event) {
   Conn *conn = *(Conn **) fiber->ev_state;
 
   switch (event) {
     case JANET_ASYNC_EVENT_READ: {
-      int rv;
-      while ((rv = sd_bus_process(conn->bus, NULL)) > 0) {
-      }
+      uint64_t expirations;
+      read(conn->timer->handle, &expirations, sizeof(uint64_t));
 
-      if (rv < 0) {
-        Janet msg = janet_fstringv("sd_bus_process: %s", strerror(-rv));
-        closeall_pending_calls(conn, msg);
-
-        CANCEL_LISTENER(conn, msg);
-        return;
-      }
-
+      process_bus(conn);
       break;
     }
+
+    case JANET_ASYNC_EVENT_CLOSE:
+      END_LISTENER(fiber);
+      break;
+
+    default:
+      break;
+  }
+}
+
+static void bus_callback(JanetFiber *fiber, JanetAsyncEvent event) {
+  Conn *conn = *(Conn **) fiber->ev_state;
+
+  switch (event) {
+    case JANET_ASYNC_EVENT_WRITE:
+    case JANET_ASYNC_EVENT_READ:
+      process_bus(conn);
+      break;
 
     case JANET_ASYNC_EVENT_HUP:
     case JANET_ASYNC_EVENT_ERR: {
       Janet msg = janet_cstringv("D-Bus connection error");
       closeall_pending_calls(conn, msg);
 
-      CANCEL_LISTENER(conn, msg);
+      CANCEL_LISTENER(fiber, msg);
       return;
     }
 
@@ -87,37 +157,39 @@ static void bus_process_driver(JanetFiber *fiber, JanetAsyncEvent event) {
       Janet msg = janet_cstringv("D-Bus connection closed");
       closeall_pending_calls(conn, msg);
 
-      END_LISTENER(conn);
-    }
-    case JANET_ASYNC_EVENT_DEINIT:
+      END_LISTENER(fiber);
       return;
+    }
 
     default:
       break;
   }
 }
 
-void start_async_listener(Conn *conn) {
-  if (conn->listener && janet_fiber_status(conn->listener) != JANET_STATUS_DEAD)
-    return;
-
-  // todo: check closed flag for stream
-  if (!conn->stream) {
-    int fd       = CALL_SD_BUS_FUNC(sd_bus_get_fd, conn->bus);
-    conn->stream = janet_stream(
-        fd, JANET_STREAM_READABLE | JANET_STREAM_NOT_CLOSEABLE, NULL);
-  }
+JanetStream *janet_poll(Conn *conn, int fd, uint32_t flags,
+                        JanetEVCallback callback) {
+  JanetStream *stream = janet_stream(fd, flags, NULL);
 
   JanetFunction *thunk = janet_thunk_delay(janet_wrap_nil());
-  conn->listener       = janet_fiber(thunk, 64, 0, NULL);
+  JanetFiber *fiber    = janet_fiber(thunk, 64, 0, NULL);
 
-  // Ugly, but janet_async_end will call free on fiber->ev_state which will
-  // otherwise clobber our bus object
   Conn **state;
   if (!(state = janet_malloc(sizeof(Conn *))))
     JANET_OUT_OF_MEMORY;
   *state = conn;
 
-  janet_async_start_fiber(conn->listener, conn->stream, JANET_ASYNC_LISTEN_BOTH,
-                          bus_process_driver, state);
+  janet_async_start_fiber(fiber, stream, JANET_ASYNC_LISTEN_BOTH, callback,
+                          state);
+  return stream;
+}
+
+void init_async(Conn *conn) {
+  int timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+  conn->timer =
+      janet_poll(conn, timer_fd, JANET_STREAM_READABLE, timer_callback);
+
+  int bus_fd       = CALL_SD_BUS_FUNC(sd_bus_get_fd, conn->bus);
+  uint32_t flags   = getevents(conn->bus);
+  conn->bus_stream = janet_poll(
+      conn, bus_fd, flags | JANET_STREAM_NOT_CLOSEABLE, bus_callback);
 }
