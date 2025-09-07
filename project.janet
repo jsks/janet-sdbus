@@ -10,10 +10,8 @@
   (unless (zero? (os/proc-wait child))
     (errorf "command failed: %p" args))
   (def output (:read (child :out) :all))
-  (if (or (nil? output) (empty? output))
-    []
-    (->> (string/trim output)
-         (string/split " "))))
+  (when (not (nil? output))
+    (string/trim output)))
 
 (defn some-suffix? [str & suffixes]
   (some |(string/has-suffix? $ str) suffixes))
@@ -22,17 +20,20 @@
   (->> (map |(string directory "/" $) (os/dir directory))
        (filter |(some-suffix? $ ;suffixes))))
 
+(defn is-gcc? []
+  (let [cc (run "which" "cc")]
+    (= (run "readlink" cc) "gcc")))
+
 ### CFLAGS/LDFLAGS
-(def sanitizer-cflags
-  (if (= (dyn :build-type) "debug")
-    ["-fsanitize=address" "-fno-omit-frame-pointer"]
-    []))
+(when (= (dyn :build-type) "debug")
+  (setdyn :optimize 0))
 
-(def project-cflags
-  (tuple/join default-cflags sanitizer-cflags))
+(def project-cflags @["-pedantic" "-Werror"])
+(when (and (not= (dyn :build-type) "release") (is-gcc?))
+  (array/push project-cflags "-fanalyzer"))
 
-(def project-ldflags
-  (tuple/join default-ldflags (run "pkg-config" "--libs" "libsystemd")))
+(when (= (dyn :build-type) "develop")
+  (array/push project-cflags "-fsanitize=address"))
 
 ### Source files
 (declare-source
@@ -41,9 +42,9 @@
 
 (declare-native
   :name "sdbus/native"
-  :cflags project-cflags
-  :lflags project-ldflags
-  :headers ["src/async.h" "src/common.h"]
+  :cflags [;default-cflags ;project-cflags]
+  :lflags [;default-ldflags (run "pkg-config" "--libs" "libsystemd")]
+  :headers ["src/common.h"]
   :source ["src/async.c"
            "src/bus.c"
            "src/call.c"
@@ -52,5 +53,6 @@
            "src/message.c"
            "src/slot.c"])
 
+## Development tasks
 (task "fmt" []
   (run "clang-format" "-i" "--Werror" "--style=file" ;(find-files "src" ".c" ".h")))

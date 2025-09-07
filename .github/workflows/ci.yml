@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
         matrix:
-          build-type: ['debug', 'release']
+          build-type: ['develop', 'release']
 
     steps:
       - name: Checkout Janet

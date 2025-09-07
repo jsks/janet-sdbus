@@ -9,7 +9,7 @@ Janet bindings to [sd-bus](https://www.freedesktop.org/software/systemd/man/late
   (def names (sdbus/call-method bus "org.freedesktop.DBus"
                                     "/org/freedesktop/DBus"
                                     "org.freedesktop.DBus"
-                                    "GetId"))
+                                    "ListNames"))
   (pp names))
 
 ```
@@ -25,7 +25,7 @@ $ jpm install https://github.com/jsks/janet-sdbus
 ### Development
 
 ```sh
-$ jpm clean && jpm --build-type=debug build
+$ jpm clean && jpm --build-type=develop build
 $ jpm -l install
 $ LD_PRELOAD=/usr/lib/libasan.so jpm -l test
 ```
