@@ -21,8 +21,8 @@
        (filter |(some-suffix? $ ;suffixes))))
 
 (defn is-gcc? []
-  (let [cc (run "which" "cc")]
-    (= (run "readlink" cc) "gcc")))
+  (let [version (run "env" "-u" "LD_PRELOAD" (dyn :cc) "--version")]
+    (string/find "gcc" (string/ascii-lower version))))
 
 ### CFLAGS/LDFLAGS
 (when (= (dyn :build-type) "debug")
