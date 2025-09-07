@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2025 Joshua Krusell
 
-#include "async.h"
 #include "common.h"
 
 #define janet_fstringv(cstr, ...)                                              \
@@ -20,24 +19,6 @@ static void process_bus(Conn *conn) {
 
   setevents(conn);
   settimeout(conn);
-}
-
-void settimeout(Conn *conn) {
-  uint64_t usec = 0;
-  CALL_SD_BUS_FUNC(sd_bus_get_timeout, conn->bus, &usec);
-
-  if (usec == 0)
-    return process_bus(conn);
-
-  struct itimerspec new_value = { 0 };
-  if (usec != UINT64_MAX) {
-    new_value.it_value.tv_sec  = usec / 1000000;
-    new_value.it_value.tv_nsec = (usec % 1000000) * 1000;
-  }
-
-  if (timerfd_settime(conn->timer->handle, TFD_TIMER_ABSTIME, &new_value,
-                      NULL) == -1)
-    janet_panicf("timerfd_settime: %s", strerror(errno));
 }
 
 static uint32_t getevents(sd_bus *bus) {
@@ -59,6 +40,26 @@ void setevents(Conn *conn) {
                             newflags;
 
   janet_stream_edge_triggered(conn->bus_stream);
+}
+
+void settimeout(Conn *conn) {
+  uint64_t usec = 0;
+  CALL_SD_BUS_FUNC(sd_bus_get_timeout, conn->bus, &usec);
+
+  if (usec == 0) {
+    process_bus(conn);
+    return;
+  }
+
+  struct itimerspec new_value = { 0 };
+  if (usec != UINT64_MAX) {
+    new_value.it_value.tv_sec  = usec / 1000000;
+    new_value.it_value.tv_nsec = (usec % 1000000) * 1000;
+  }
+
+  if (timerfd_settime(conn->timer->handle, TFD_TIMER_ABSTIME, &new_value,
+                      NULL) == -1)
+    janet_panicf("timerfd_settime: %s", strerror(errno));
 }
 
 AsyncCall *create_async_call(JanetChannel *ch) {
@@ -166,8 +167,8 @@ static void bus_callback(JanetFiber *fiber, JanetAsyncEvent event) {
   }
 }
 
-JanetStream *janet_poll(Conn *conn, int fd, uint32_t flags,
-                        JanetEVCallback callback) {
+static JanetStream *janet_poll(Conn *conn, int fd, uint32_t flags,
+                               JanetEVCallback callback) {
   JanetStream *stream = janet_stream(fd, flags, NULL);
 
   JanetFunction *thunk = janet_thunk_delay(janet_wrap_nil());
