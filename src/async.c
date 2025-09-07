@@ -121,7 +121,9 @@ static void timer_callback(JanetFiber *fiber, JanetAsyncEvent event) {
   switch (event) {
     case JANET_ASYNC_EVENT_READ: {
       uint64_t expirations;
-      read(conn->timer->handle, &expirations, sizeof(uint64_t));
+      int rv = read(conn->timer->handle, &expirations, sizeof(uint64_t));
+      if (rv == -1 && errno == EBADF)
+        janet_panic("Timer file descriptor unexpectedly closed");
 
       process_bus(conn);
       break;
