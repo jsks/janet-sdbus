@@ -14,26 +14,6 @@ typedef struct {
   AsyncCall *call;
 } AsyncCallbackState;
 
-// -------------------------------------------------------------------
-// Abstract types
-// -------------------------------------------------------------------
-
-static int dbus_error_gc(void *, size_t);
-const JanetAbstractType dbus_error_type = { .name = "sdbus/error",
-                                            .gc   = dbus_error_gc,
-                                            JANET_ATEND_GC };
-
-static int dbus_error_gc(void *data, size_t size) {
-  UNUSED(size);
-
-  sd_bus_error_free((sd_bus_error *) data);
-  return 0;
-}
-
-// -------------------------------------------------------------------
-// Async call functions
-// -------------------------------------------------------------------
-
 static JanetString format_error(sd_bus_error *error) {
   const char *fmt =
       (error->message) ? "D-Bus error: %s: %s" : "D-Bus error: %s";
