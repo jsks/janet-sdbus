@@ -35,10 +35,10 @@
 ###
 # Check flags from spec
 (assert (deep= (get-in members [:Add :annotations])
-               @[{:org.freedesktop.DBus.Deprecated "true"}]))
+               @[{:name "org.freedesktop.DBus.Deprecated" :value "true"}]))
 
 (assert (deep= (get-in members [:Empty :annotations])
-               @[{:org.freedesktop.DBus.Method.NoReply "true"}]))
+               @[{:name "org.freedesktop.DBus.Method.NoReply" :value "true"}]))
 
 (assert (nil? (members :Hidden)))
 
@@ -48,7 +48,7 @@
 (assert (= (get-in members [:Invalidate :access]) "readwrite"))
 
 (assert (deep= (get-in members [:Constant :annotations])
-               @[{:org.freedesktop.DBus.Property.EmitsChangedSignal "false"}]))
+               @[{:name "org.freedesktop.DBus.Property.EmitsChangedSignal" :value "false"}]))
 
 ###
 # Methods

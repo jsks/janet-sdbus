@@ -7,8 +7,8 @@
 (defn- annotation-struct [tag attributes children]
   (unless (and (attributes :name) (attributes :value))
     (error "expected name and value attributes for annotation"))
-  {(keyword (attributes :name))
-   (attributes :value)})
+  {:name (attributes :name)
+   :value (attributes :value)})
 
 (defn- arg-struct [tag attributes children]
   (unless (attributes :type)

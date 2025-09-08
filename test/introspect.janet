@@ -38,7 +38,7 @@
                @[{:name "example-arg" :type "i" :direction "in" :annotations @[]}]))
 (assert (deep= (example-method :out) @[]))
 (assert (deep= (example-method :annotations)
-               @[{:example-annotation "example-value"}]))
+               @[{:name "example-annotation" :value "example-value"}]))
 
 (def empty-method (get-in result [:interfaces :org.example :members :empty-method]))
 (assert (= (empty-method :kind) 'method))
