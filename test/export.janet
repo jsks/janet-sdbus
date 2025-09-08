@@ -18,7 +18,8 @@
           :Unexpected (sdbus/method "" "" (fn [] "Hello World!"))
 
           :Constant (sdbus/property "n" 13)
-          :Mutable (sdbus/property "as" @["Hello" "World!"] :ew)
+          :NoSignalMutable (sdbus/property "i" 10 :w)
+          :SignalMutable (sdbus/property "as" @["Hello" "World!"] :ew)
           :Invalidate (sdbus/property "b" true :iw)
 
           :Signal (sdbus/signal "g")})
@@ -42,7 +43,8 @@
 (assert (nil? (members :Hidden)))
 
 (assert (= (get-in members [:Constant :access]) "read"))
-(assert (= (get-in members [:Mutable :access]) "readwrite"))
+(assert (= (get-in members [:NoSignalMutable :access]) "readwrite"))
+(assert (= (get-in members [:SignalMutable :access]) "readwrite"))
 (assert (= (get-in members [:Invalidate :access]) "readwrite"))
 
 (assert (deep= (get-in members [:Constant :annotations])
@@ -74,11 +76,11 @@
 ###
 # Properties
 (assert (= (:Constant proxy) 13))
-(assert (deep= (:Mutable proxy) @["Hello" "World!"]))
+(assert (deep= (:SignalMutable proxy) @["Hello" "World!"]))
 (assert (= (:Invalidate proxy) true))
 
 (assert-error "Read-only property" (:Constant proxy 14))
-(assert-error "Invalid type" (:Mutable proxy true))
+(assert-error "Invalid type" (:SignalMutable proxy true))
 
 ###
 # Signals
@@ -97,17 +99,21 @@
 # PropertyChanged signal w/ value
 (:subscribe proxy :PropertiesChanged ch)
 
-(:Mutable proxy @["Gone"])
+(:SignalMutable proxy @["Gone"])
 (def signal-result (ev/take ch))
 (def msg (sdbus/message-read-all (get signal-result 1)))
 
-(assert (deep= (:Mutable proxy) @["Gone"]))
+(assert (deep= (:SignalMutable proxy) @["Gone"]))
 (assert (= (first signal-result) :ok))
 (assert (= (first msg) "org.janet.UnitTests"))
-(assert (deep= (get msg 1) @{"Mutable" ["as" @["Gone"]]}))
+(assert (deep= (get msg 1) @{"SignalMutable" ["as" @["Gone"]]}))
 
 # Value unchanged, no signal should be emitted
-(:Mutable proxy @["Gone"])
+(:SignalMutable proxy @["Gone"])
+(assert (zero? (ev/count ch)))
+
+# Value changed for property that should not emit signal
+(:NoSignalMutable proxy 42)
 (assert (zero? (ev/count ch)))
 
 # PropertyChanged signal w/o value, ie invalidation
@@ -119,9 +125,10 @@
 (assert (= (first msg) "org.janet.UnitTests"))
 (assert (deep= (get msg 2) @["Invalidate"]))
 
+
 # We shouldn't receive additional signals after unsubscribing
 (:unsubscribe proxy :PropertiesChanged)
-(:Mutable proxy @["Missed"])
+(:SignalMutable proxy @["Missed"])
 
 (assert (empty? (proxy :subscriptions)))
 (assert (zero? (ev/count ch)))

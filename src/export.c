@@ -153,10 +153,9 @@ static int property_handler_core(const char *property, const char *method,
   return janet_checktype(out, JANET_NIL);
 }
 
-static int property_handler_get(sd_bus *bus, const char *path,
-                                const char *interface, const char *property,
-                                sd_bus_message *msg, void *userdata,
-                                sd_bus_error *ret_error) {
+static int property_getter(sd_bus *bus, const char *path, const char *interface,
+                           const char *property, sd_bus_message *msg,
+                           void *userdata, sd_bus_error *ret_error) {
   UNUSED(bus);
   UNUSED(path);
   UNUSED(interface);
@@ -166,10 +165,23 @@ static int property_handler_get(sd_bus *bus, const char *path,
   return 0;
 }
 
-static int property_handler_set(sd_bus *bus, const char *path,
-                                const char *interface, const char *property,
-                                sd_bus_message *msg, void *userdata,
-                                sd_bus_error *ret_error) {
+static int property_setter(sd_bus *bus, const char *path, const char *interface,
+                           const char *property, sd_bus_message *msg,
+                           void *userdata, sd_bus_error *ret_error) {
+  UNUSED(bus);
+  UNUSED(path);
+  UNUSED(interface);
+
+  property_handler_core(property, "setter", msg, userdata, ret_error);
+
+  return 0;
+}
+
+static int property_setter_with_signal(sd_bus *bus, const char *path,
+                                       const char *interface,
+                                       const char *property,
+                                       sd_bus_message *msg, void *userdata,
+                                       sd_bus_error *ret_error) {
   int rv = property_handler_core(property, "setter", msg, userdata, ret_error);
   if (!rv)
     CALL_SD_BUS_FUNC(sd_bus_emit_properties_changed, bus, path, interface,
@@ -206,14 +218,18 @@ static sd_bus_vtable create_vtable_property(const char *name, Janet entry) {
   JanetKeyword keys = janet_unwrap_keyword(flags);
   uint64_t mask     = sd_bus_flags(keys);
 
-  Janet writable = dict_symget(entry, "writable");
+  bool writable = janet_unwrap_boolean(dict_symget(entry, "writable"));
   sd_bus_vtable property;
-  if (janet_unwrap_boolean(writable))
+  if (writable && mask & (SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE |
+                          SD_BUS_VTABLE_PROPERTY_EMITS_INVALIDATION))
     property = (sd_bus_vtable) SD_BUS_WRITABLE_PROPERTY(
-        name, sig, property_handler_get, property_handler_set, 0, mask);
+        name, sig, property_getter, property_setter_with_signal, 0, mask);
+  else if (writable)
+    property = (sd_bus_vtable) SD_BUS_WRITABLE_PROPERTY(
+        name, sig, property_getter, property_setter, 0, mask);
   else
-    property = (sd_bus_vtable) SD_BUS_PROPERTY(name, sig, property_handler_get,
-                                               0, mask);
+    property =
+        (sd_bus_vtable) SD_BUS_PROPERTY(name, sig, property_getter, 0, mask);
 
   return property;
 }
