@@ -106,7 +106,7 @@
                  path
                  interface))
 
-(defn- subscribe [self name &opt ch]
+(defn- proxy-subscribe [self name &opt ch]
   (default ch (ev/chan))
   (var *slot* nil)
   (let [bus (self :bus)
@@ -119,7 +119,7 @@
   (set ((self :subscriptions) name) *slot*)
   ch)
 
-(defn- unsubscribe [self name]
+(defn- proxy-unsubscribe [self name]
   (if-let [slot (get (self :subscriptions) name)]
     (do (cancel slot) (set ((self :subscriptions) name) nil))
     (errorf "unknown signal name: %s" name)))
@@ -137,8 +137,8 @@
              :path (spec :path)
              :interface (string interface)
              :subscriptions @{}
-             :subscribe subscribe
-             :unsubscribe unsubscribe})
+             :subscribe proxy-subscribe
+             :unsubscribe proxy-unsubscribe})
   (when (not (in (spec :interfaces) interface))
     (errorf "interface %s not found in spec" interface))
   (->> (get-in spec [:interfaces interface :members])
