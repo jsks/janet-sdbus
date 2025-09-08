@@ -19,7 +19,6 @@ static JanetString format_error(sd_bus_error *error) {
       (error->message) ? "D-Bus error: %s: %s" : "D-Bus error: %s";
   JanetString str = janet_formatc(fmt, error->name, error->message);
 
-  sd_bus_error_free(error);
   return str;
 }
 
@@ -158,7 +157,7 @@ JANET_FN(cfun_match_signal, "(sdbus/match-signal bus match-rule chan)",
   int rv =
       sd_bus_add_match_async(conn->bus, state->call->slot, match,
                              message_handler, signal_install_handler, state);
-  free(match);
+  janet_free(match);
 
   if (rv < 0) {
     FREE_CALL_STATE(state);
