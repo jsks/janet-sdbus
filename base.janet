@@ -42,3 +42,30 @@
   [bus destination path interface property variant]
   (call-method bus destination path "org.freedesktop.DBus.Properties" "Set"
                "ssv" interface property variant))
+
+(defn emit-signal
+  ```
+  Emit a D-Bus signal. If the signal expects arguments, the first
+  rest argument must be a D-Bus signature string.
+  ```
+  [bus path interface signal & rest]
+  (def msg (message-new-signal bus path interface signal))
+  (def signature (first rest))
+  (unless (or (nil? signature) (empty? signature))
+    (message-append msg signature ;(slice rest 1)))
+  (message-send msg))
+
+(defmacro- symbolic-kvs [& args]
+  (with-syms [$syms $values]
+    ~(let [,$syms ',args
+           ,$values [,;args]]
+       (keep |(unless (nil? $1) (string/format "%s='%s'" $0 $1)) ,$syms ,$values))))
+
+(defn subscribe-signal
+  [bus interface member chan &named path sender argN]
+  (default argN [])
+  (def rules (symbolic-kvs interface member path sender))
+  (def arg-matches (map |(string/format "arg%d='%s'" $0 $1) (pairs argN)))
+  (def match-rule (-> (array/concat rules arg-matches)
+                      (string/join ",")))
+  (match-signal bus match-rule chan))

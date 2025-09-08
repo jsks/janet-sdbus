@@ -478,6 +478,27 @@ JANET_FN(cfun_message_new_method_return,
   return janet_wrap_abstract(reply_ptr);
 }
 
+JANET_FN(cfun_message_new_signal,
+         "(sdbus/message-new-signal bus path interface signal)",
+         "Create a new D-Bus signal message.") {
+  janet_fixarity(argc, 4);
+
+  Conn *conn            = janet_getabstract(argv, 0, &dbus_bus_type);
+  const char *path      = janet_getcstring(argv, 1);
+  const char *interface = janet_getcstring(argv, 2);
+  const char *member    = janet_getcstring(argv, 3);
+
+  sd_bus_message *msg = NULL;
+  CALL_SD_BUS_FUNC(sd_bus_message_new_signal, conn->bus, &msg, path, interface,
+                   member);
+
+  sd_bus_message **msg_ptr =
+      janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
+  *msg_ptr = msg;
+
+  return janet_wrap_abstract(msg_ptr);
+}
+
 JANET_FN(cfun_message_new_method_error,
          "(sdbus/message-new-method-error call name message)",
          "Create a new D-Bus message object in response to a method\n"
@@ -617,6 +638,7 @@ JanetRegExt cfuns_message[] = {
   JANET_REG("message-unref", cfun_message_unref),
   JANET_REG("message-new-method-call", cfun_message_new_method_call),
   JANET_REG("message-new-method-return", cfun_message_new_method_return),
+  JANET_REG("message-new-signal", cfun_message_new_signal),
   JANET_REG("message-new-method-error", cfun_message_new_method_error),
   JANET_REG("message-send", cfun_message_send),
   JANET_REG("message-get-destination", cfun_message_get_destination),
