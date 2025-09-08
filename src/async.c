@@ -85,7 +85,7 @@ void queue_call(AsyncCall **head, AsyncCall *call) {
 }
 
 void dequeue_call(AsyncCall **head, AsyncCall *call) {
-  if (!head)
+  if (!head || !*head)
     return;
 
   if (call->prev)
