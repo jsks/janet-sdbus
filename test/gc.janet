@@ -3,7 +3,7 @@
 
 (start-suite)
 
-(def env {:LongSleep (sdbus/method :: "" -> "i" [] (ev/sleep 1) 111)})
+(def env {:LongSleep (sdbus/method "" "i" (fn [] (ev/sleep 1) 111))})
 
 (defn send-helper [bus &opt ch]
   (default ch (ev/chan))

@@ -4,56 +4,135 @@
 (start-suite)
 
 (def bus (sdbus/open-user-bus))
+(def env {:Add (sdbus/method "ii" "i" |(+ $0 $1) :d)
+          :DoubleAcc (sdbus/method "ad" "d" (fn [& args] (->> (map |(* 2 $) args)
+                                                              (reduce2 +))))
+          :Empty (sdbus/method "" "" (fn []) :n)
+          :Hidden (sdbus/method "a{is}i" "s" (fn [dict key] (dict key)) :h)
+          :Suspend (sdbus/method "" "i" (fn [] (ev/sleep 0.01) 1))
+          :ReturnFalse (sdbus/method "i" "b" (fn [x] false))
 
-###
-# Test interface export and method calls
-(def env {:Example (sdbus/method :: "i" -> "i" [x] (+ x 1))
-          :NoInput (sdbus/method :: "" -> "s" [] "Hello World!")
-          :SideEffects (sdbus/method [])
-          :Mismatch (sdbus/method :: "" -> "as" [] 1)
-          :Expected (sdbus/method :: "i" -> "i" [x])
-          :Unexpected (sdbus/method [] "Hello World!")
-          :Error (sdbus/method [] (error "Test error"))
-          :Suspend (sdbus/method :: "" -> "i" [] (ev/sleep 0.01) 1)
-          :DoubleAcc (sdbus/method :: "ad" -> "d" [& args]
-                                   (->> (map |(* 2 $) args) (reduce2 +)))
-          :MultiLine (sdbus/method :: "i" -> "b" [x]
-                                   (def y (+ x 2))
-                                   false)})
+          :Error (sdbus/method "" "" (fn [] (error "Test error")))
+          :Mismatch (sdbus/method "" "as" (fn [] 1))
+          :Expected (sdbus/method "i" "i" (fn []))
+          :Unexpected (sdbus/method "" "" (fn [] "Hello World!"))
+
+          :Constant (sdbus/property "n" 13)
+          :Mutable (sdbus/property "as" @["Hello" "World!"] :ew)
+          :Invalidate (sdbus/property "b" true :iw)
+
+          :Signal (sdbus/signal "g")})
 
 (sdbus/request-name bus "org.janet.UnitTests")
 (def slot (sdbus/export bus "/org/janet/UnitTests" "org.janet.UnitTests" env))
 
-(def interface [bus "org.janet.UnitTests" "/org/janet/UnitTests" "org.janet.UnitTests"])
+(def spec (sdbus/introspect bus "org.janet.UnitTests" "/org/janet/UnitTests"))
+(def proxy (sdbus/proxy bus spec :org.janet.UnitTests))
 
-(def result (sdbus/call-method ;interface "Example" "i" 10))
-(assert (= result 11))
-
-(def result (sdbus/call-method ;interface "Suspend"))
-(assert (= result 1))
-
-(def result (sdbus/call-method ;interface "DoubleAcc" "ad" @[1 2 3]))
-(assert (= result 12))
-
-(def result (sdbus/call-method ;interface "MultiLine" "i" 0))
-(assert (not result))
-
-(def result (sdbus/call-method ;interface "NoInput"))
-(assert (= result "Hello World!"))
-
-(def result (sdbus/call-method ;interface "SideEffects"))
-(assert (nil? result))
-
-(assert-error "Mismatched signature" (sdbus/call-method ;interface "Mismatch"))
-(assert-error "Expected output" (sdbus/call-method ;interface "Expected"))
-(assert-error "Unexpected output" (sdbus/call-method ;interface "Unexpected"))
-(assert-error "Method throw" (sdbus/call-method ;interface "Error"))
-
-(sdbus/cancel slot)
-(assert-error "Removed interface" (sdbus/call-method ;interface "NoInput"))
+(def members (get-in spec [:interfaces :org.janet.UnitTests :members]))
 
 ###
-# Some common error cases
+# Check flags from spec
+(assert (deep= (get-in members [:Add :annotations])
+               @[{:org.freedesktop.DBus.Deprecated "true"}]))
+
+(assert (deep= (get-in members [:Empty :annotations])
+               @[{:org.freedesktop.DBus.Method.NoReply "true"}]))
+
+(assert (nil? (members :Hidden)))
+
+(assert (= (get-in members [:Constant :access]) "read"))
+(assert (= (get-in members [:Mutable :access]) "readwrite"))
+(assert (= (get-in members [:Invalidate :access]) "readwrite"))
+
+(assert (deep= (get-in members [:Constant :annotations])
+               @[{:org.freedesktop.DBus.Property.EmitsChangedSignal "false"}]))
+
+###
+# Methods
+(assert (= (:Add proxy 1 2) 3))
+(assert (= (:DoubleAcc proxy @[1 2 3]) 12))
+(assert (nil? (:Empty proxy)))
+
+(def result (sdbus/call-method bus "org.janet.UnitTests"
+                               "/org/janet/UnitTests"
+                               "org.janet.UnitTests"
+                               "Hidden" "a{is}i" @{1 "value"} 1))
+(assert (= result "value"))
+
+# Methods yielding to the event-loop should not error
+(assert (= (:Suspend proxy) 1))
+
+# Methods returning `false` should not error
+(assert (not (:ReturnFalse proxy 10)))
+
+(assert-error "Method throw" (:Error proxy))
+(assert-error "Mismatched signature" (:Mismatch proxy))
+(assert-error "Expected output" (:Expected proxy))
+(assert-error "Unexpected output" (:Unexpected proxy))
+
+###
+# Properties
+(assert (= (:Constant proxy) 13))
+(assert (deep= (:Mutable proxy) @["Hello" "World!"]))
+(assert (= (:Invalidate proxy) true))
+
+(assert-error "Read-only property" (:Constant proxy 14))
+(assert-error "Invalid type" (:Mutable proxy true))
+
+###
+# Signals
+(def ch (:subscribe proxy :Signal))
+
+(sdbus/emit-signal bus "/org/janet/UnitTests"
+                   "org.janet.UnitTests"
+                   "Signal" "g" "/org/janet/UnitTests")
+
+(def signal (ev/take ch))
+(assert (= (first signal) :ok))
+(assert (= (sdbus/message-read (get signal 1)) "/org/janet/UnitTests"))
+
+(:unsubscribe proxy :Signal)
+
+# PropertyChanged signal w/ value
+(:subscribe proxy :PropertiesChanged ch)
+
+(:Mutable proxy @["Gone"])
+(def signal-result (ev/take ch))
+(def msg (sdbus/message-read-all (get signal-result 1)))
+
+(assert (deep= (:Mutable proxy) @["Gone"]))
+(assert (= (first signal-result) :ok))
+(assert (= (first msg) "org.janet.UnitTests"))
+(assert (deep= (get msg 1) @{"Mutable" ["as" @["Gone"]]}))
+
+# Value unchanged, no signal should be emitted
+(:Mutable proxy @["Gone"])
+(assert (zero? (ev/count ch)))
+
+# PropertyChanged signal w/o value, ie invalidation
+(:Invalidate proxy false)
+(def signal-result (ev/take ch))
+(def msg (sdbus/message-read-all (get signal-result 1)))
+
+(assert (= (first signal-result) :ok))
+(assert (= (first msg) "org.janet.UnitTests"))
+(assert (deep= (get msg 2) @["Invalidate"]))
+
+# We shouldn't receive additional signals after unsubscribing
+(:unsubscribe proxy :PropertiesChanged)
+(:Mutable proxy @["Missed"])
+
+(assert (empty? (proxy :subscriptions)))
+(assert (zero? (ev/count ch)))
+
+(assert-error "Unsubscribe from known signal" (:unsubscribe proxy :BogusSignal))
+
+(sdbus/cancel slot)
+(assert-error "Removed interface" (:Empty proxy))
+
+###
+# Misc. error cases
 (def service [bus "/org/janet/ErrorCases" "org.janet.ErrorCases"])
 
 (assert-error "Empty interface" (sdbus/export ;service {}))
@@ -61,32 +140,7 @@
 (assert-error "Missing in-signature" (sdbus/export ;service {:x {:sig-in "s" :function (fn [])}}))
 (assert-error "Missing out-signature" (sdbus/export ;service {:x {:sig-out "s" :function (fn [])}}))
 (assert-error "Missing function" (sdbus/export ;service {:x {:sig-in "s" :sig-out "s"}}))
-(assert-error "Invalid method name" (sdbus/export ;service {:!x_2 (sdbus/method [])}))
-
-###
-# Test flags by checking introspection data
-(def flag-env {:Example (sdbus/method :: "i" -> "i" :h [x] x)
-               :NoReply (sdbus/method :dn [])})
-
-(def flag-interface [bus "org.janet.UnitTests" "/org/janet/UnitTests" "org.janet.UnitTests"])
-(def flag-slot (sdbus/export bus "/org/janet/UnitTests" "org.janet.UnitTests" flag-env))
-
-(def spec (sdbus/introspect bus "org.janet.UnitTests" "/org/janet/UnitTests"))
-(def members (get-in spec [:interfaces :org.janet.UnitTests :members]))
-
-(assert (= (length members) 1))
-(assert (= (first (keys members)) :NoReply))
-
-(def annotations (get-in members [:NoReply :annotations]))
-(assert (= (length annotations) 2))
-(assert (deep= annotations @[{:org.freedesktop.DBus.Deprecated "true"}
-                             {:org.freedesktop.DBus.Method.NoReply "true"}]))
-
-(def flag-interface [bus "org.janet.UnitTests" "/org/janet/UnitTests" "org.janet.UnitTests"])
-(assert (= (sdbus/call-method ;flag-interface "Example" "i" 10) 10))
-(assert (nil? (sdbus/call-method ;flag-interface "NoReply")))
-
-(sdbus/cancel flag-slot)
+(assert-error "Invalid method name" (sdbus/export ;service {:!x_2 (sdbus/method "" "" (fn []))}))
 
 (sdbus/release-name bus "org.janet.UnitTests")
 (sdbus/close-bus bus)

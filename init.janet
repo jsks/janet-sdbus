@@ -51,7 +51,7 @@
   (when (deep-not= (self :value) value)
     (set (self :value) value)))
 
-(defn create-property [signature value &opt flags]
+(defn property [signature value &opt flags]
   ```
   Create a D-Bus property definition map.
   ```
@@ -80,43 +80,32 @@
            (message-send reply))
       ([err fiber] (send-error msg err) (propagate err fiber)))))
 
-(defn create-method [fun &named in-sig out-sig flags]
+(defn method [in-signature out-signature fun &opt flags]
   ```
   Create a D-Bus method definition map.
   ```
-  (default in-sig "")
-  (default out-sig "")
+  (default in-signature "")
+  (default out-signature "")
   (default flags "")
   (when (not (string/check-set ":dhsn" flags))
     (errorf "Invalid method flags: %s" flags))
   {:type 'method
    :flags flags
-   :sig-in in-sig
-   :sig-out out-sig
-   :function (method-wrapper fun out-sig)})
+   :sig-in in-signature
+   :sig-out out-signature
+   :function (method-wrapper fun out-signature)})
 
-(defn create-signal
+(defn signal
   ```
     Create a D-Bus signal definition map.
     ```
-  [signature &named sig flags]
+  [signature &opt flags]
   (default flags "")
   (when (not (string/check-set ":dhs" flags))
     (errorf "Invalid signal flags: %s" flags))
   {:type 'signal
+   :flags flags
    :sig signature})
-
-(defmacro method [& forms]
-  (match forms
-    [[& args] & body]
-    ~(sdbus/create-method (fn ,args ,;body))
-    [flags [& args] & body]
-    ~(sdbus/create-method (fn ,args ,;body) :flags ,flags)
-    [':: in '-> out [& args] & body]
-    ~(sdbus/create-method (fn ,args ,;body) :in-sig ,in :out-sig ,out)
-    [':: in '-> out flags [& args] & body]
-    ~(sdbus/create-method (fn ,args ,;body) :in-sig ,in :out-sig ,out :flags ,flags)
-    ~(error "Invalid method definition syntax")))
 
 (def- dbus-interface ["org.freedesktop.DBus"
                       "/org/freedesktop/DBus"
