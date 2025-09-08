@@ -43,7 +43,15 @@
   (fn [self msg]
     (try (fun self msg) ([err] err))))
 
-(defn create-property [value &named sig flags]
+(defn- property-getter [self reply]
+  (message-append reply (self :sig) (self :value)))
+
+(defn- property-setter [self msg]
+  (def value (message-read-all msg))
+  (when (deep-not= (self :value) value)
+    (set (self :value) value)))
+
+(defn create-property [signature value &opt flags]
   ```
   Create a D-Bus property definition map.
   ```
@@ -53,10 +61,10 @@
   @{:type 'property
     :flags flags
     :writable (string/check-set flags :w)
-    :sig sig
+    :sig signature
     :value value
-    :getter (property-wrapper (fn [self reply] (message-append reply (self :sig) (self :value))))
-    :setter (property-wrapper (fn [self msg] (set (self :value) (first (normalized-read msg)))))})
+    :getter (property-wrapper property-getter)
+    :setter (property-wrapper property-setter)})
 
 (defn- send-error [call err]
   (def error-msg (message-new-method-error call "org.janet.error" err))

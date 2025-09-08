@@ -13,10 +13,21 @@
   } while (0)
 
 typedef struct {
-  Conn *conn;
-  Janet methods;
   sd_bus_vtable *vtable;
-} ExportCallbackState;
+  Janet methods;
+} ExportState;
+
+static ExportState *init_export_state(sd_bus_vtable *vtable, Janet methods) {
+  ExportState *state;
+  if (!(state = janet_malloc(sizeof(ExportState))))
+    JANET_OUT_OF_MEMORY;
+
+  *state = (ExportState) { .vtable = vtable, .methods = methods };
+
+  janet_gcroot(state->methods);
+
+  return state;
+}
 
 static Janet dict_symget(Janet dict, const char *key) {
   JanetDictView view;
@@ -78,8 +89,8 @@ static int method_handler(sd_bus_message *msg, void *userdata,
                           sd_bus_error *ret_error) {
   UNUSED(ret_error);
 
-  const char *member         = sd_bus_message_get_member(msg);
-  ExportCallbackState *state = userdata;
+  const char *member = sd_bus_message_get_member(msg);
+  ExportState *state = userdata;
   JanetDictView env;
   janet_dictionary_view(state->methods, &env.kvs, &env.len, &env.cap);
 
@@ -109,7 +120,7 @@ static int method_handler(sd_bus_message *msg, void *userdata,
 static int property_handler_core(const char *property, const char *method,
                                  sd_bus_message *msg, void *userdata,
                                  sd_bus_error *ret_error) {
-  ExportCallbackState *state = userdata;
+  ExportState *state = userdata;
   JanetDictView env;
   janet_dictionary_view(state->methods, &env.kvs, &env.len, &env.cap);
 
@@ -139,26 +150,36 @@ static int property_handler_core(const char *property, const char *method,
                              "internal property error: %s",
                              (char *) janet_to_string(out));
 
+  return janet_checktype(out, JANET_NIL);
+}
+
+static int property_handler_get(sd_bus *bus, const char *path,
+                                const char *interface, const char *property,
+                                sd_bus_message *msg, void *userdata,
+                                sd_bus_error *ret_error) {
+  UNUSED(bus);
+  UNUSED(path);
+  UNUSED(interface);
+
+  property_handler_core(property, "getter", msg, userdata, ret_error);
+
   return 0;
 }
 
-#define DEFINE_PROPERTY_HANDLER(suffix, method_str)                            \
-  static int property_handler_##suffix(                                        \
-      sd_bus *bus, const char *path, const char *interface,                    \
-      const char *property, sd_bus_message *msg, void *userdata,               \
-      sd_bus_error *ret_error) {                                               \
-    UNUSED(bus);                                                               \
-    UNUSED(path);                                                              \
-    UNUSED(interface);                                                         \
-    return property_handler_core(property, method_str, msg, userdata,          \
-                                 ret_error);                                   \
-  }
+static int property_handler_set(sd_bus *bus, const char *path,
+                                const char *interface, const char *property,
+                                sd_bus_message *msg, void *userdata,
+                                sd_bus_error *ret_error) {
+  int rv = property_handler_core(property, "setter", msg, userdata, ret_error);
+  if (!rv)
+    CALL_SD_BUS_FUNC(sd_bus_emit_properties_changed, bus, path, interface,
+                     property, NULL);
 
-DEFINE_PROPERTY_HANDLER(get, "getter")
-DEFINE_PROPERTY_HANDLER(set, "setter")
+  return 0;
+}
 
 static void destroy_export_callback(void *userdata) {
-  ExportCallbackState *state = userdata;
+  ExportState *state = userdata;
 
   FREE_EXPORT_STATE(state);
 }
@@ -263,14 +284,7 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
     janet_panicf("No members to register for interface: %s", interface);
 
   sd_bus_vtable *vtable = create_vtable(env.len + 2, env);
-
-  ExportCallbackState *state;
-  if (!(state = janet_malloc(sizeof(ExportCallbackState))))
-    JANET_OUT_OF_MEMORY;
-  *state = (ExportCallbackState) { .conn    = conn,
-                                   .methods = argv[3],
-                                   .vtable  = vtable };
-  janet_gcroot(state->methods);
+  ExportState *state    = init_export_state(vtable, argv[3]);
 
   sd_bus_slot **slot_ptr =
       janet_abstract(&dbus_slot_type, sizeof(sd_bus_slot *));
