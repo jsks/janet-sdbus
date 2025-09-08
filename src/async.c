@@ -101,12 +101,11 @@ static void closeall_pending_calls(Conn *conn, Janet msg) {
   if (!conn->queue)
     return;
 
-  Janet status     = janet_ckeywordv("error");
-  JanetTuple tuple = janet_tuple_n((Janet[]) { status, msg }, 2);
+  Janet tuple = janet_wrap_tuple(TUPLE(janet_ckeywordv("error"), msg));
 
   AsyncCall *p = conn->queue;
   do {
-    janet_channel_give(p->chan, janet_wrap_tuple(tuple));
+    janet_channel_give(p->chan, tuple);
 
     sd_bus_slot_unrefp(p->slot);
     *p->slot = NULL;

@@ -26,10 +26,6 @@ typedef struct {
   const char *cursor;
 } Parser;
 
-// -------------------------------------------------------------------
-// D-Bus message abstract type
-// -------------------------------------------------------------------
-
 static int gc_sdbus_message(void *, size_t);
 const JanetAbstractType dbus_message_type = { .name = "sdbus/message",
                                               .gc   = gc_sdbus_message,
@@ -48,10 +44,6 @@ static bool is_basic_type(int ch) {
   // TODO: byte and file descriptor types
   return strchr("bnqiuxtdsog", ch) != NULL;
 }
-
-// -------------------------------------------------------------------
-// Utility functions for parsing signatures and appending data
-// -------------------------------------------------------------------
 
 static int skip(Parser *p, size_t skip) {
   p->cursor += skip;
@@ -107,10 +99,6 @@ static size_t find_subtype(const char *signature) {
   else
     return 0;
 }
-
-// -------------------------------------------------------------------
-// Functions appending Janet data to a D-Bus message
-// -------------------------------------------------------------------
 
 static void append_complete_type(Parser *, Janet);
 static void append_basic_type(Parser *, Janet);
@@ -320,10 +308,6 @@ static void append_basic_type(Parser *p, Janet arg) {
   }
 }
 
-// -------------------------------------------------------------------
-// Functions converting D-Bus message content to Janet types
-// -------------------------------------------------------------------
-
 static Janet read_basic_type(sd_bus_message *, char);
 static Janet read_variant_type(sd_bus_message *, const char *);
 static Janet read_struct_type(sd_bus_message *, const char *);
@@ -364,9 +348,7 @@ static Janet read_variant_type(sd_bus_message *msg, const char *signature) {
 
   CALL_SD_BUS_FUNC(sd_bus_message_exit_container, msg);
 
-  JanetTuple tuple =
-      janet_tuple_n((const Janet[]) { janet_cstringv(signature), obj }, 2);
-
+  JanetTuple tuple = TUPLE(janet_cstringv(signature), obj);
   return janet_wrap_tuple(tuple);
 }
 
@@ -381,7 +363,9 @@ static Janet read_struct_type(sd_bus_message *msg, const char *signature) {
     janet_array_push(array, obj);
 
   CALL_SD_BUS_FUNC(sd_bus_message_exit_container, msg);
-  return janet_wrap_tuple(janet_tuple_n(array->data, array->count));
+
+  JanetTuple tuple = janet_tuple_n(array->data, array->count);
+  return janet_wrap_tuple(tuple);
 }
 
 static Janet read_dict_type(sd_bus_message *msg, const char *signature) {
@@ -453,10 +437,6 @@ static Janet read_basic_type(sd_bus_message *msg, char type) {
   // Unreachable
   janet_panic("Unsupported basic type");
 }
-
-// -------------------------------------------------------------------
-// Exported wrapper functions
-// -------------------------------------------------------------------
 
 JANET_FN(
     cfun_message_new_method_call,

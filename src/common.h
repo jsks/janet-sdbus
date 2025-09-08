@@ -24,6 +24,13 @@
     (void) (x);                                                                \
   } while (0)
 
+#define TUPLE(...)                                                             \
+  janet_tuple_n((const Janet[]) { __VA_ARGS__ },                               \
+                sizeof((Janet[]) { __VA_ARGS__ }) / sizeof(Janet))
+
+#define CHAN_PUSH(chan, ...)                                                   \
+  janet_channel_give(chan, janet_wrap_tuple(TUPLE(__VA_ARGS__)))
+
 #define END_LISTENER(fiber)                                                    \
   do {                                                                         \
     janet_schedule(fiber, janet_wrap_nil());                                   \
