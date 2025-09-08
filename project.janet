@@ -38,7 +38,7 @@
 ### Source files
 (declare-source
   :prefix "sdbus"
-  :source ["base.janet" "init.janet" "introspect.janet" "proxy.janet"])
+  :source ["init.janet" "introspect.janet"])
 
 (declare-native
   :name "sdbus/native"
