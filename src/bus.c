@@ -50,8 +50,15 @@ static int dbus_bus_gcmark(void *p, size_t size) {
 }
 
 static void dbus_bus_tostring(void *p, JanetBuffer *buffer) {
+  sd_bus *bus = ((Conn *) p)->bus;
+
+  if (!CALL_SD_BUS_FUNC(sd_bus_is_open, bus)) {
+    janet_buffer_push_cstring(buffer, "closed");
+    return;
+  }
+
   const char *name = NULL;
-  CALL_SD_BUS_FUNC(sd_bus_get_unique_name, ((Conn *) p)->bus, &name);
+  CALL_SD_BUS_FUNC(sd_bus_get_unique_name, bus, &name);
 
   janet_buffer_push_cstring(buffer, name);
 }
@@ -125,7 +132,6 @@ JANET_FN(cfun_open_system_remote, "(sdbus/open-system-remote machine)",
   OPEN_BUS1(sd_bus_open_system_remote, host);
 }
 
-// todo: documentation flushes outgoing, does not block for incoming
 JANET_FN(cfun_close_bus, "(sdbus/close-bus bus)", "Close a D-Bus connection.") {
   janet_fixarity(argc, 1);
 
@@ -161,6 +167,9 @@ JANET_FN(cfun_get_unique_name, "(sdbus/get-unique-name bus)",
   janet_fixarity(argc, 1);
 
   Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
+
+  if (!CALL_SD_BUS_FUNC(sd_bus_is_open, conn->bus))
+    return janet_cstringv("closed");
 
   const char *name = NULL;
   CALL_SD_BUS_FUNC(sd_bus_get_unique_name, conn->bus, &name);
