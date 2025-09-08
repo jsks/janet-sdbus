@@ -149,6 +149,10 @@
 (assert-error "Missing function" (sdbus/export ;service {:x {:sig-in "s" :sig-out "s"}}))
 (assert-error "Invalid method name" (sdbus/export ;service {:!x_2 (sdbus/method "" "" (fn []))}))
 
+(assert-error "Invalid method flag" (sdbus/method "" "" (fn []) :x))
+(assert-error "Invalid property flag" (sdbus/property "i" 1 :z))
+(assert-error "Invalid signal flag" (sdbus/signal "i" :x))
+
 (sdbus/release-name bus "org.janet.UnitTests")
 (sdbus/close-bus bus)
 
