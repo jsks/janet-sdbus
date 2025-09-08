@@ -3,10 +3,6 @@
 
 #include "common.h"
 
-// -------------------------------------------------------------------
-// D-Bus bus abstract type
-// -------------------------------------------------------------------
-
 static int dbus_bus_gc(void *, size_t);
 static int dbus_bus_gcmark(void *, size_t);
 static int dbus_bus_get(void *, Janet, Janet *);
@@ -72,10 +68,6 @@ static Janet dbus_bus_next(void *p, Janet key) {
   UNUSED(p);
   return janet_nextmethod(dbus_bus_methods, key);
 }
-
-// -------------------------------------------------------------------
-// Exported wrapper functions
-// -------------------------------------------------------------------
 
 #define OPEN_BUS_CORE(CALL)                                                    \
   do {                                                                         \
