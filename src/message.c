@@ -40,9 +40,26 @@ static int gc_sdbus_message(void *data, size_t len) {
   return 0;
 }
 
+static bool checkbyte(Janet x) {
+  if (!janet_checktype(x, JANET_NUMBER))
+    return false;
+
+  double n = janet_unwrap_number(x);
+  return (n >= 0 && n <= UINT8_MAX && n == (uint8_t) n);
+}
+
+// Be consistent with janet_get* functions for signature and error
+static uint8_t getbyte(const Janet *argv, int32_t n) {
+  Janet x = argv[n];
+  if (!checkbyte(x))
+    janet_panicf("bad slot #%d, expected 8 bit unsigned integer, got %v", n, x);
+
+  return (uint8_t) janet_unwrap_number(x);
+}
+
 static bool is_basic_type(int ch) {
-  // TODO: byte and file descriptor types
-  return strchr("bnqiuxtdsog", ch) != NULL;
+  // TODO: file descriptor type
+  return strchr("ybnqiuxtdsog", ch) != NULL;
 }
 
 static int skip(Parser *p, size_t skip) {
@@ -184,9 +201,19 @@ static void append_dict_type(Parser *p, Janet arg) {
 }
 
 static void append_array_type(Parser *p, Janet arg) {
+  // Dictionaries
   if (peek(p) == '{') {
     next(p);
     append_dict_type(p, arg);
+    return;
+  }
+
+  // Byte arrays
+  if (peek(p) == 'y') {
+    next(p);
+    JanetByteView view = janet_getbytes(&arg, 0);
+    CALL_SD_BUS_FUNC(sd_bus_message_append_array, p->msg, 'y', view.bytes,
+                     (size_t) view.len);
     return;
   }
 
@@ -267,6 +294,9 @@ static void append_variant_type(Parser *p, Janet arg) {
 
 static void append_basic_type(Parser *p, Janet arg) {
   switch (cursor(p)) {
+    case 'y': // byte
+      CALL_SD_BUS_FUNC(sd_bus_message_append, p->msg, "y", getbyte(&arg, 0));
+      break;
     case 'b': // boolean
       CALL_SD_BUS_FUNC(sd_bus_message_append, p->msg, "b",
                        janet_getboolean(&arg, 0));
@@ -313,6 +343,7 @@ static Janet read_variant_type(sd_bus_message *, const char *);
 static Janet read_struct_type(sd_bus_message *, const char *);
 static Janet read_array_type(sd_bus_message *, const char *);
 static Janet read_dict_type(sd_bus_message *, const char *);
+static Janet read_byte_array_type(sd_bus_message *);
 
 // Returns 1 on success, 0 on end of message
 static int read_complete_type(sd_bus_message *msg, Janet *obj) {
@@ -330,6 +361,8 @@ static int read_complete_type(sd_bus_message *msg, Janet *obj) {
     *obj = read_struct_type(msg, signature);
   else if (type == 'a' && *signature == '{')
     *obj = read_dict_type(msg, signature);
+  else if (type == 'a' && *signature == 'y')
+    *obj = read_byte_array_type(msg);
   else if (type == 'a')
     *obj = read_array_type(msg, signature);
   else
@@ -366,6 +399,17 @@ static Janet read_struct_type(sd_bus_message *msg, const char *signature) {
 
   JanetTuple tuple = janet_tuple_n(array->data, array->count);
   return janet_wrap_tuple(tuple);
+}
+
+static Janet read_byte_array_type(sd_bus_message *msg) {
+  const void *data;
+  size_t len;
+  CALL_SD_BUS_FUNC(sd_bus_message_read_array, msg, 'y', &data, &len);
+
+  JanetBuffer *buffer = janet_buffer(len);
+  janet_buffer_push_bytes(buffer, (const uint8_t *) data, len);
+
+  return janet_wrap_buffer(buffer);
 }
 
 static Janet read_dict_type(sd_bus_message *msg, const char *signature) {
@@ -412,6 +456,8 @@ static Janet read_basic_type(sd_bus_message *msg, char type) {
   switch (type) {
     case 'b': // boolean
       DBUS_TO_JANET_NUM(boolean, int, 'b');
+    case 'y': // uint8_t
+      DBUS_TO_JANET_NUM(number, uint8_t, 'y');
     case 'n': // int16_t
       DBUS_TO_JANET_NUM(number, int16_t, 'n');
     case 'q': // uint16_t

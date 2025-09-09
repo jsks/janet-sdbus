@@ -30,6 +30,7 @@
        (assert (= ,$out ,$value)))))
 
 (test-basic "b" true :boolean)            # Boolean
+(test-basic "y" 10 :number)               # uint8_t
 (test-basic "n" -30 :number)              # Int16
 (test-basic "q" 40 :number)               # UInt16
 (test-basic "i" 50 :number)               # Int32
@@ -42,6 +43,7 @@
 (test-basic "o" "/org/freedesktop/DBus" :string) # Object path
 (test-basic "g" "org.freedesktop.DBus" :string)  # Interface name
 
+(assert-error "Invalid byte" (from-message "y" 999))
 (assert-error "Test invalid boolean" (from-message "b" 10))
 (assert-error "Decimal to integer" (from-message "i" 3.14))
 (assert-error "Integer overflow" (from-message "n" 100000))
@@ -68,6 +70,7 @@
 
 # Array type
 (assert (deep= (from-message "ab" @[true false]) @[true false]))
+(assert (deep= (from-message "ay" @"Buffer") @"Buffer"))
 (assert (deep= (from-message "a(si)" @[["Hello" 1] ["World" 2]]) @[["Hello" 1] ["World" 2]]))
 (assert (deep= (from-message "aad" @[@[0.1] @[0.2]]) @[@[0.1] @[0.2]]))
 (assert (deep= (from-message "aii" @[1 2] 3) @[@[1 2] 3]))
