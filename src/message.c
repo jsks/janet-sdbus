@@ -175,9 +175,6 @@ static void append_dict_type(Parser *p, Janet arg) {
   dict_sig[end - 1] = '\0';
 
   JanetTable *tbl = janet_gettable(&arg, 0);
-  if (tbl->count == 0)
-    janet_panic("Empty table: missing dictionary arguments");
-
   Parser dict_parser = { p->msg, dict_sig };
   for (int32_t i = 0; i < tbl->count; i++) {
     CALL_SD_BUS_FUNC(sd_bus_message_open_container, p->msg,
@@ -227,9 +224,6 @@ static void append_array_type(Parser *p, Janet arg) {
                    array_sig);
 
   JanetArray *array = janet_getarray(&arg, 0);
-  if (array->count == 0)
-    janet_panic("Empty array: missing array arguments");
-
   Parser array_parser = { p->msg, array_sig };
   for (int32_t i = 0; i < array->count; i++) {
     append_complete_type(&array_parser, array->data[i]);
