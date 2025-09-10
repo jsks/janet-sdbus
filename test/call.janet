@@ -29,7 +29,7 @@
 ###
 # Signals
 (def ch (ev/chan))
-(sdbus/subscribe-signal bus "org.freedesktop.DBus" "NameOwnerChanged" ch)
+(sdbus/subscribe-signal bus "NameOwnerChanged" ch :interface "org.freedesktop.DBus")
 (sdbus/call-method ;interface "RequestName" "su" "org.janet.UnitTests" 0)
 
 (def result (ev/take ch))

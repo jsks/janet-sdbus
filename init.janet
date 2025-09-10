@@ -63,13 +63,20 @@
        (keep |(unless (nil? $1) (string/format "%s='%s'" $0 $1)) ,$syms ,$values))))
 
 (defn subscribe-signal
-  [bus interface member chan &named path sender argN]
+  [bus member chan &named sender path interface argN]
   (default argN [])
   (def rules (symbolic-kvs interface member path sender))
-  (def arg-matches (map |(string/format "arg%d='%s'" $0 $1) (pairs argN)))
+  (def arg-matches (map (fn [[k v]] (string/format "arg%d='%s'" k v)) (pairs argN)))
   (def match-rule (-> (array/concat rules arg-matches)
                       (string/join ",")))
   (match-signal bus match-rule chan))
+
+(defn subscribe-properties-changed [bus interface chan &named sender path]
+  (subscribe-signal bus "PropertiesChanged" chan
+                    :interface "org.freedesktop.DBus.Properties"
+                    :sender sender
+                    :path path
+                    :argN [interface]))
 
 (defn introspect
   ```
@@ -99,13 +106,6 @@
         (get (get-property bus destination path interface name) 1)
         (set-property bus destination path interface name [sig value])))))
 
-(defn- prop-changed-rule [path interface]
-  (string/format "interface='%s',member='%s',path='%s',arg0='%s'"
-                 "org.freedesktop.DBus.Properties"
-                 "PropertiesChanged"
-                 path
-                 interface))
-
 (defn- proxy-subscribe [self name &opt ch]
   (default ch (ev/chan))
   (var *slot* nil)
@@ -114,8 +114,8 @@
         path (self :path)
         name (string name)]
     (if (= name "PropertiesChanged")
-      (set *slot* (match-signal bus (prop-changed-rule path interface) ch))
-      (set *slot* (subscribe-signal bus interface name ch :path path))))
+      (set *slot* (subscribe-properties-changed bus interface ch :path path))
+      (set *slot* (subscribe-signal bus name ch :path path :interface interface))))
   (set ((self :subscriptions) name) *slot*)
   ch)
 

@@ -14,9 +14,9 @@
 (assert (= (sdbus/request-name new-bus "org.janet.UnitTests" :a) :queued))
 
 (def ch (ev/chan))
-(sdbus/subscribe-signal new-bus "org.freedesktop.DBus" "NameLost" ch
+(sdbus/subscribe-signal new-bus "NameLost" ch :interface "org.freedesktop.DBus"
                         :path "/org/freedesktop/DBus" :sender "org.freedesktop.DBus")
-(sdbus/subscribe-signal new-bus "org.freedesktop.DBus" "NameAcquired" ch
+(sdbus/subscribe-signal new-bus "NameAcquired" ch :interface "org.freedesktop.DBus"
                         :path "/org/freedesktop/DBus" :sender "org.freedesktop.DBus")
 
 (sdbus/release-name bus "org.janet.UnitTests")
