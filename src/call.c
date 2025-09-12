@@ -146,7 +146,7 @@ JANET_FN(cfun_match_signal, "(sdbus/match-signal bus match-rule chan)",
          len = prefix_len + rule_len + 1;
 
   char *match;
-  if (!(match = janet_malloc(len * sizeof(char))))
+  if (!(match = janet_smalloc(len * sizeof(char))))
     JANET_OUT_OF_MEMORY;
 
   memcpy(match, prefix, prefix_len);
@@ -157,7 +157,7 @@ JANET_FN(cfun_match_signal, "(sdbus/match-signal bus match-rule chan)",
   int rv =
       sd_bus_add_match_async(conn->bus, state->call->slot, match,
                              message_handler, signal_install_handler, state);
-  janet_free(match);
+  janet_sfree(match);
 
   if (rv < 0) {
     FREE_CALL_STATE(state);
