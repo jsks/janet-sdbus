@@ -42,8 +42,7 @@ static int gc_sdbus_message(void *data, size_t len) {
 }
 
 static bool is_basic_type(int ch) {
-  // TODO: file descriptor type
-  return strchr("ybnqiuxtdsog", ch) != NULL;
+  return strchr("ybnqiuxtdsogh", ch) != NULL;
 }
 
 static int skip(Parser *p, size_t skip) {
@@ -332,6 +331,8 @@ static void append_basic_type(Parser *p, Janet arg) {
       CALL_SD_BUS_FUNC(sd_bus_message_append_basic, p->msg, cursor(p),
                        getcstring(arg));
       break;
+    case 'h': // file descriptor
+      CALL_SD_BUS_FUNC(sd_bus_message_append, p->msg, "h", getfd(arg));
       break;
   }
 }
@@ -450,6 +451,46 @@ static Janet read_array_type(sd_bus_message *msg, const char *signature) {
   return janet_wrap_array(array);
 }
 
+static Janet read_fd_type(sd_bus_message *msg) {
+  int32_t flags = 0;
+  int fd;
+  CALL_SD_BUS_FUNC(sd_bus_message_read_basic, msg, 'h', &fd);
+
+  int copy;
+  if ((copy = fcntl(fd, F_DUPFD_CLOEXEC, 3)) == -1)
+    janet_panicf("fcntl(F_DUPFD_CLOEXEC) failed for fd=%d: %d", fd,
+                 strerror(errno));
+
+  int getfl;
+  if ((getfl = fcntl(copy, F_GETFL)) == -1)
+    janet_panicf("fcntl(F_GETFL) failed for fd=%d: %d", copy, strerror(errno));
+
+  int mode = getfl & O_ACCMODE;
+  switch (mode) {
+    case O_RDONLY:
+      flags |= JANET_STREAM_READABLE;
+      break;
+    case O_WRONLY:
+      flags |= JANET_STREAM_WRITABLE;
+      break;
+    case O_RDWR:
+      flags |= (JANET_STREAM_READABLE | JANET_STREAM_WRITABLE);
+      break;
+  }
+
+  int type;
+  socklen_t len = sizeof(type);
+  if (getsockopt(copy, SOL_SOCKET, SO_TYPE, &type, &len) == 0) {
+    if (type == SOCK_STREAM)
+      flags |= JANET_STREAM_SOCKET;
+    else if (type == SOCK_DGRAM)
+      flags |= JANET_STREAM_UDPSERVER;
+  }
+
+  JanetStream *stream = janet_stream(copy, flags, NULL);
+  return janet_wrap_abstract(stream);
+}
+
 static Janet read_basic_type(sd_bus_message *msg, char type) {
   switch (type) {
     case 'b': // boolean
@@ -476,9 +517,10 @@ static Janet read_basic_type(sd_bus_message *msg, char type) {
       DBUS_TO_JANET_STR('o');
     case 'g': // signature
       DBUS_TO_JANET_STR('g');
+    case 'h': // file descriptor
+      return read_fd_type(msg);
   }
 
-  // Unreachable
   janet_panic("Unsupported basic type");
 }
 
