@@ -215,13 +215,14 @@ JanetDictView getdictionary(Janet x) {
 }
 
 int getfd(Janet x) {
-  const JanetAbstractType *at;
-  if (!(at = janet_get_abstract_type(x))) {
+  if (!(janet_checktype(x, JANET_ABSTRACT))) {
     dbus_type_error(":core/file or :core/stream", x);
   }
 
+  void *p                     = janet_unwrap_abstract(x);
+  const JanetAbstractType *at = janet_abstract_type(p);
   if (at == &janet_file_type) {
-    JanetFile *file = janet_unwrap_abstract(x);
+    JanetFile *file = p;
     if (file->flags & JANET_FILE_CLOSED) {
       janet_panic("bad argument to D-Bus type 'h', file is closed");
     }
@@ -230,7 +231,7 @@ int getfd(Janet x) {
   }
 
   if (at == &janet_stream_type) {
-    JanetStream *stream = janet_unwrap_abstract(x);
+    JanetStream *stream = p;
     if (stream->flags & JANET_STREAM_CLOSED) {
       janet_panic("bad argument to D-Bus type 'h', stream is closed");
     }

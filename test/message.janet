@@ -52,6 +52,28 @@
 (assert-error "Invalid signature" (from-message "/hello/world"))
 (assert-error "Invalid object path" (from-message "from-around"))
 
+# File descriptors
+(def stream (os/open "options.janet" :r))
+(def dup (from-message "h" stream))
+(:close stream)
+
+(assert (= (type dup) :core/stream))
+(assert (deep= (:read dup 7) @"(setdyn"))
+
+(:close dup)
+(assert-error "Stream is closed" (from-message "h" stream))
+
+(def file (file/temp))
+(def stream (from-message "h" file))
+(:write stream "four")
+(file/seek file :set 0)
+
+(assert (deep= (file/read file 4) @"four"))
+
+(:close file)
+(assert-error "File is closed" (from-message "h" file))
+
+(assert-error "Expected stream/file" (from-message "h" 1))
 
 # Multiple inputs
 (assert (deep= (from-message "sis" "Hello" 42 "World") @["Hello" 42 "World"]))
