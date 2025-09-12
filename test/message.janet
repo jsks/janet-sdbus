@@ -41,7 +41,7 @@
 
 (test-basic "s" "Hello World" :string)           # String
 (test-basic "o" "/org/freedesktop/DBus" :string) # Object path
-(test-basic "g" "org.freedesktop.DBus" :string)  # Interface name
+(test-basic "g" "s(ii)" :string)                 # Signature
 
 (assert-error "Invalid byte" (from-message "y" 999))
 (assert-error "Test invalid boolean" (from-message "b" 10))
@@ -49,6 +49,9 @@
 (assert-error "Integer overflow" (from-message "n" 100000))
 (assert-error "Signed to unsigned" (from-message "u" -10))
 (assert-error "Invalid input to string" (from-message "s" 10))
+(assert-error "Invalid signature" (from-message "/hello/world"))
+(assert-error "Invalid object path" (from-message "from-around"))
+
 
 # Multiple inputs
 (assert (deep= (from-message "sis" "Hello" 42 "World") @["Hello" 42 "World"]))
@@ -77,7 +80,7 @@
 (assert (deep= (from-message "aii" @[1 2] 3) @[@[1 2] 3]))
 (assert (deep= (from-message "v" ["as" @["Hello" "World"]]) ["as" @["Hello" "World"]]))
 
-(assert-error "Be strict about array input" (from-message "as" ["Hello" "World"]))
+(assert (deep= (from-message "as" ["Hello" "World"]) @["Hello" "World"]))
 
 # Dictionary type
 (assert (deep= (from-message "a{ss}" @{}) @{}))
@@ -85,6 +88,8 @@
 (assert (deep= (from-message "a{s(ii)}" @{"key" [1 2]}) @{"key" [1 2]}))
 (assert (deep= (from-message "aa{ii}" @[@{1 2}]) @[@{1 2}]))
 (assert (deep= (from-message "a{ii}ai" @{1 2} @[1 2]) @[@{1 2} @[1 2]]))
+
+(assert (deep= (from-message "a{si}" {"a" 1 "b" 2}) @{"a" 1 "b" 2}))
 
 (assert-error "Incomplete dictionary signature" (from-message "a{i}" @{}))
 (assert-error "Variant as key" (from-message "a{vi}" @{["s" "key"] 1}))

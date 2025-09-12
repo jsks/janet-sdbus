@@ -86,9 +86,8 @@
 # Signals
 (def ch (:subscribe proxy :Signal))
 
-(sdbus/emit-signal bus "/org/janet/UnitTests"
-                   "org.janet.UnitTests"
-                   "Signal" "g" "/org/janet/UnitTests")
+(sdbus/emit-signal bus "/org/janet/UnitTests" "org.janet.UnitTests"
+                   "Signal" "o" "/org/janet/UnitTests")
 
 (def signal (ev/take ch))
 (assert (= (first signal) :ok))

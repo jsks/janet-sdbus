@@ -44,14 +44,15 @@
   :name "sdbus/native"
   :cflags [;default-cflags ;project-cflags]
   :lflags [;default-ldflags (run "pkg-config" "--libs" "libsystemd")]
-  :headers ["src/common.h"]
+  :headers ["src/common.h" "src/unwrap.h"]
   :source ["src/async.c"
            "src/bus.c"
            "src/call.c"
            "src/export.c"
            "src/main.c"
            "src/message.c"
-           "src/slot.c"])
+           "src/slot.c"
+           "src/unwrap.c"])
 
 ## Development tasks
 (task "fmt" []
