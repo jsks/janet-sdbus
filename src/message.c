@@ -342,7 +342,6 @@ static Janet read_variant_type(sd_bus_message *, const char *);
 static Janet read_struct_type(sd_bus_message *, const char *);
 static Janet read_array_type(sd_bus_message *, const char *);
 static Janet read_dict_type(sd_bus_message *, const char *);
-static Janet read_byte_array_type(sd_bus_message *);
 
 // Returns 1 on success, 0 on end of message
 static int read_complete_type(sd_bus_message *msg, Janet *obj) {
@@ -360,8 +359,6 @@ static int read_complete_type(sd_bus_message *msg, Janet *obj) {
     *obj = read_struct_type(msg, signature);
   else if (type == 'a' && *signature == '{')
     *obj = read_dict_type(msg, signature);
-  else if (type == 'a' && *signature == 'y')
-    *obj = read_byte_array_type(msg);
   else if (type == 'a')
     *obj = read_array_type(msg, signature);
   else
@@ -398,17 +395,6 @@ static Janet read_struct_type(sd_bus_message *msg, const char *signature) {
 
   JanetTuple tuple = janet_tuple_n(array->data, array->count);
   return janet_wrap_tuple(tuple);
-}
-
-static Janet read_byte_array_type(sd_bus_message *msg) {
-  const void *data;
-  size_t len;
-  CALL_SD_BUS_FUNC(sd_bus_message_read_array, msg, 'y', &data, &len);
-
-  JanetBuffer *buffer = janet_buffer(len);
-  janet_buffer_push_bytes(buffer, (const uint8_t *) data, len);
-
-  return janet_wrap_buffer(buffer);
 }
 
 static Janet read_dict_type(sd_bus_message *msg, const char *signature) {

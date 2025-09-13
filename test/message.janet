@@ -96,7 +96,7 @@
 # Array type
 (assert (deep= (from-message "as" @[]) @[]))
 (assert (deep= (from-message "ab" @[true false]) @[true false]))
-(assert (deep= (from-message "ay" @"Buffer") @"Buffer"))
+(assert (deep= (from-message "ay" @"Buffer") (thaw (string/bytes "Buffer"))))
 (assert (deep= (from-message "a(si)" @[["Hello" 1] ["World" 2]]) @[["Hello" 1] ["World" 2]]))
 (assert (deep= (from-message "aad" @[@[0.1] @[0.2]]) @[@[0.1] @[0.2]]))
 (assert (deep= (from-message "aii" @[1 2] 3) @[@[1 2] 3]))
