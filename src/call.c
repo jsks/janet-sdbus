@@ -150,7 +150,7 @@ JANET_FN(cfun_match_signal, "(sdbus/match-signal bus match-rule chan)",
     JANET_OUT_OF_MEMORY;
 
   memcpy(match, prefix, prefix_len);
-  memcpy(match, rule, rule_len + 1);
+  memcpy(match + prefix_len, rule, rule_len + 1);
 
   AsyncState *state = init_callback_state(conn, ch);
 
