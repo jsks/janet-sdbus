@@ -22,6 +22,7 @@
     (match (ev/take ch)
       [:ok msg] (message-read-all msg)
       [:error err] (error err)
+      [:close _] (error "D-Bus connection closed")
       result (errorf "Unexpected result: %p" result))))
 
 (defn get-property

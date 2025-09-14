@@ -97,11 +97,11 @@ void dequeue_call(AsyncCall **head, AsyncCall *call) {
     call->next->prev = call->prev;
 }
 
-static void closeall_pending_calls(Conn *conn, Janet msg) {
+static void closeall_pending_calls(Conn *conn, Janet status, Janet msg) {
   if (!conn->queue)
     return;
 
-  Janet tuple = janet_wrap_tuple(TUPLE(janet_ckeywordv("error"), msg));
+  Janet tuple = janet_wrap_tuple(TUPLE(status, msg));
 
   AsyncCall *p = conn->queue;
   while (p) {
@@ -152,16 +152,18 @@ static void bus_callback(JanetFiber *fiber, JanetAsyncEvent event) {
 
     case JANET_ASYNC_EVENT_HUP:
     case JANET_ASYNC_EVENT_ERR: {
-      Janet msg = janet_cstringv("D-Bus connection error");
-      closeall_pending_calls(conn, msg);
+      Janet status = janet_ckeywordv("error"),
+            msg    = janet_cstringv("D-Bus connection error");
+      closeall_pending_calls(conn, status, msg);
 
       CANCEL_LISTENER(fiber, msg);
       return;
     }
 
     case JANET_ASYNC_EVENT_CLOSE: {
-      Janet msg = janet_cstringv("D-Bus connection closed");
-      closeall_pending_calls(conn, msg);
+      Janet status = janet_ckeywordv("close"),
+            msg    = janet_cstringv("D-Bus connection closed");
+      closeall_pending_calls(conn, status, msg);
 
       END_LISTENER(fiber);
       return;

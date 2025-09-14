@@ -28,7 +28,7 @@
   (setup)
   (sdbus/close-bus bus)
   (def [status _] (ev/take ch))
-  (assert (= status :error)))
+  (assert (= status :close)))
 
 (do
   (setup)
