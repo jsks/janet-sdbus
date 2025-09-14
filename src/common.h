@@ -76,7 +76,6 @@ extern void settimeout(Conn *);
 extern void setevents(Conn *);
 
 // D-Bus call
-extern const JanetAbstractType dbus_error_type;
 extern JanetRegExt cfuns_call[];
 
 // D-Bus message

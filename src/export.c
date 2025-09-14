@@ -267,7 +267,7 @@ static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
 
     const char *member = cstr(kv->key);
     if (sd_bus_member_name_is_valid(member) == 0)
-      janet_panicf("Invalid D-Bus method name: %s", member);
+      janet_panicf("Invalid D-Bus member name: %s", member);
 
     Janet type = dict_symget(kv->value, "type");
     if (janet_symeq(type, "method"))

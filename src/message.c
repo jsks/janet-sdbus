@@ -507,7 +507,7 @@ static Janet read_basic_type(sd_bus_message *msg, char type) {
       return read_fd_type(msg);
   }
 
-  janet_panic("Unsupported basic type");
+  janet_panicf("Unsupported basic type: %c", type);
 }
 
 JANET_FN(
