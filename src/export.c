@@ -252,7 +252,7 @@ static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
   size_t i          = 0;
   while ((kv = janet_dictionary_next(dict.kvs, dict.cap, kv))) {
     if (i >= len - 1)
-      janet_panicf("Too many methods for D-Bus interface: %d", len);
+      janet_panicf("Too many members for D-Bus interface: %d", len);
 
     const char *member = cstr(kv->key);
     if (sd_bus_member_name_is_valid(member) == 0)
