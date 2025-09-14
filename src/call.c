@@ -98,15 +98,16 @@ static int message_handler(sd_bus_message *reply, void *userdata,
   return 0;
 }
 
-JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
-         "Call a D-Bus method asynchronously. Returns an object\n"
-         "representing the pending call that can be passed to\n"
-         "`sdbus/cancel`.\n\n"
-         "`message` must be a well-formed `:sdbus/message` object.\n\n"
-         "The result from the asynchronous call will be written to the\n"
-         "channel, `chan`. Result will be a tuple containing a status\n"
-         "and value, either\n `[:error value]` indicating an error or\n"
-         "`[:ok value]`. \n\n") {
+JANET_FN(
+    cfun_call_async, "(sdbus/call-async bus message chan &opt timeout)",
+    "Call a D-Bus method asynchronously with an optional timeout in "
+    "microseconds. Returns a bus slot that may be passed to `sdbus/cancel` to "
+    "cancel the pending call.\n\n"
+    "The reply message from the asynchronous call will be written to "
+    "the channel, `chan`, together with a status value as a tuple, `[status "
+    "reply]`. Status will be one of :ok, :error, or :close --- the last "
+    "of which indicating that the D-Bus connection was closed while the "
+    "call was pending.") {
   janet_arity(argc, 3, 4);
 
   Conn *conn               = janet_getabstract(argv, 0, &dbus_bus_type);
@@ -133,8 +134,15 @@ JANET_FN(cfun_call_async, "(sdbus/call-async bus message chan)",
   return janet_wrap_abstract(state->call->slot);
 }
 
-JANET_FN(cfun_match_signal, "(sdbus/match-signal bus match-rule chan)",
-         "Subscribe to a D-Bus signal with the given match-rule.") {
+JANET_FN(
+    cfun_match_signal, "(sdbus/match-signal bus rule chan)",
+    "Joins the prefix, \"type='signal'\", to a match rule and subscribes to "
+    "a D-Bus signal. Returns a bus slot that may be passed to "
+    "`sdbus/cancel` to unsubscribe.\n\n"
+    "Signal messages are written to the channel, `chan`, together with a "
+    "status value as a tuple, `[status msg]`. Status will be one of :ok, "
+    ":error, or :close --- the last of which indicating that the D-Bus "
+    "connection has been closed.") {
   janet_fixarity(argc, 3);
 
   Conn *conn       = janet_getabstract(argv, 0, &dbus_bus_type);

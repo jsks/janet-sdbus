@@ -293,7 +293,12 @@ static sd_bus_vtable *create_vtable(size_t len, JanetDictView dict) {
 }
 
 JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
-         "Register a D-Bus interface with the given bus.") {
+         "Export a D-Bus interface on the given object path and immediately "
+         "begin listening to requests asynchronously. Returns a bus slot which "
+         "may be passed to `sdbus/cancel` to remove the exported interface.\n\n"
+
+         "`env` must be a struct/table whose members are created with "
+         "`sdbus/method`, `sdbus/property`, and `sdbus/signal`.") {
   janet_fixarity(argc, 4);
 
   Conn *conn            = janet_getabstract(argv, 0, &dbus_bus_type);

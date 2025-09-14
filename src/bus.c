@@ -92,47 +92,58 @@ static Janet dbus_bus_next(void *p, Janet key) {
 #define OPEN_BUS1(fun, arg)                                                    \
   OPEN_BUS_CORE(CALL_SD_BUS_FUNC(fun, &conn->bus, arg))
 
-JANET_FN(cfun_open_user_bus, "(sdbus/open-user-bus)",
-         "Open a user D-Bus connection.") {
+JANET_FN(
+    cfun_open_user_bus, "(sdbus/open-user-bus)",
+    "Open a user D-Bus connection. "
+    "The returned connection must be explicitly closed before program exit.") {
   UNUSED(argv);
   janet_fixarity(argc, 0);
 
   OPEN_BUS0(sd_bus_open_user);
 }
 
-JANET_FN(cfun_open_system_bus, "(sdbus/open-system-bus)",
-         "Open a system D-Bus connection.") {
+JANET_FN(
+    cfun_open_system_bus, "(sdbus/open-system-bus)",
+    "Open a system D-Bus connection. "
+    "The returned connection must be explicitly closed before program exit.") {
   UNUSED(argv);
   janet_fixarity(argc, 0);
 
   OPEN_BUS0(sd_bus_open_system);
 }
 
-JANET_FN(cfun_open_user_machine, "(sdbus/open-user-machine)",
-         "Open a user D-Bus connection for a specific machine.") {
+JANET_FN(
+    cfun_open_user_machine, "(sdbus/open-user-machine machine)",
+    "Open a user D-Bus connection for a specific machine. "
+    "The returned connection must be explicitly closed before program exit.") {
   janet_fixarity(argc, 1);
 
   const char *machine = janet_getcstring(argv, 0);
   OPEN_BUS1(sd_bus_open_user_machine, machine);
 }
 
-JANET_FN(cfun_open_system_machine, "(sdbus/open-system-machine machine)",
-         "Open a system D-Bus connection for a specific machine.") {
+JANET_FN(
+    cfun_open_system_machine, "(sdbus/open-system-machine machine)",
+    "Open a system D-Bus connection for a specific machine. "
+    "The returned connection must be explicitly closed before program exit.") {
   janet_fixarity(argc, 1);
 
   const char *machine = janet_getcstring(argv, 0);
   OPEN_BUS1(sd_bus_open_system_machine, machine);
 }
 
-JANET_FN(cfun_open_system_remote, "(sdbus/open-system-remote machine)",
-         "Open a system D-Bus connection for a remote machine.") {
+JANET_FN(
+    cfun_open_system_remote, "(sdbus/open-system-remote host)",
+    "Open a system D-Bus connection for a remote host. "
+    "The returned connection must be explicitly closed before program exit.") {
   janet_fixarity(argc, 1);
 
   const char *host = janet_getcstring(argv, 0);
   OPEN_BUS1(sd_bus_open_system_remote, host);
 }
 
-JANET_FN(cfun_close_bus, "(sdbus/close-bus bus)", "Close a D-Bus connection.") {
+JANET_FN(cfun_close_bus, "(sdbus/close-bus bus)",
+         "Close a D-Bus connection. Returns `nil`.") {
   janet_fixarity(argc, 1);
 
   Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
@@ -152,7 +163,7 @@ JANET_FN(cfun_close_bus, "(sdbus/close-bus bus)", "Close a D-Bus connection.") {
   return janet_wrap_nil();
 }
 
-JANET_FN(cfun_bus_is_open, "(sdbus/bus-is-open bus)",
+JANET_FN(cfun_bus_is_open, "(sdbus/bus-is-open? bus)",
          "Check if a D-Bus connection is open.") {
   janet_fixarity(argc, 1);
 
@@ -180,7 +191,8 @@ JANET_FN(cfun_get_unique_name, "(sdbus/get-unique-name bus)",
 JANET_FN(
     cfun_set_allow_interactive_authorization,
     "(sdbus/set-allow-interactive-authorization bus allow)",
-    "Set whether to allow interactive authorization on a D-Bus connection.") {
+    "Set whether to allow interactive authorization on a D-Bus connection. "
+    "Returns nil") {
   janet_fixarity(argc, 2);
 
   Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
@@ -193,7 +205,7 @@ JANET_FN(
 }
 
 JANET_FN(cfun_list_names, "(sdbus/list-names bus)",
-         "List registered names on a D-Bus connection.") {
+         "Returns a list registered names on a D-Bus connection.") {
   janet_fixarity(argc, 1);
 
   Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
@@ -214,17 +226,6 @@ JANET_FN(cfun_list_names, "(sdbus/list-names bus)",
   return janet_wrap_array(list);
 }
 
-JANET_FN(cfun_send, "(sdbus/send bus msg)", "Send a D-Bus message.") {
-  janet_fixarity(argc, 2);
-
-  Conn *conn               = janet_getabstract(argv, 0, &dbus_bus_type);
-  sd_bus_message **msg_ptr = janet_getabstract(argv, 1, &dbus_message_type);
-
-  CALL_SD_BUS_FUNC(sd_bus_send, conn->bus, *msg_ptr, NULL);
-
-  return janet_wrap_nil();
-}
-
 JanetRegExt cfuns_bus[] = {
   JANET_REG("open-user-bus", cfun_open_user_bus),
   JANET_REG("open-system-bus", cfun_open_system_bus),
@@ -232,11 +233,10 @@ JanetRegExt cfuns_bus[] = {
   JANET_REG("open-system-machine", cfun_open_system_machine),
   JANET_REG("open-system-remote", cfun_open_system_remote),
   JANET_REG("close-bus", cfun_close_bus),
-  JANET_REG("bus-is-open", cfun_bus_is_open),
+  JANET_REG("bus-is-open?", cfun_bus_is_open),
   JANET_REG("get-unique-name", cfun_get_unique_name),
   JANET_REG("set-allow-interactive-authorization",
             cfun_set_allow_interactive_authorization),
   JANET_REG("list-names", cfun_list_names),
-  JANET_REG("send", cfun_send),
   JANET_REG_END
 };

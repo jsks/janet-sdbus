@@ -535,7 +535,7 @@ JANET_FN(
 
 JANET_FN(cfun_message_new_method_return,
          "(sdbus/message-new-method-return call)",
-         "Create a new D-Bus message object in response to a method call.") {
+         "Create a new D-Bus message in response to a method call.") {
   janet_fixarity(argc, 1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
@@ -573,8 +573,8 @@ JANET_FN(cfun_message_new_signal,
 
 JANET_FN(cfun_message_new_method_error,
          "(sdbus/message-new-method-error call name message)",
-         "Create a new D-Bus message object in response to a method\n"
-         "call with an error.") {
+         "Create a new D-Bus error message in response to a method "
+         "call.") {
   janet_fixarity(argc, 3);
 
   sd_bus_message **call = janet_getabstract(argv, 0, &dbus_message_type);
@@ -592,8 +592,7 @@ JANET_FN(cfun_message_new_method_error,
   return janet_wrap_abstract(reply_ptr);
 }
 
-JANET_FN(cfun_message_send, "(sdbus/message-send msg)",
-         "Send a D-Bus message.") {
+JANET_FN(cfun_message_send, "(sdbus/message-send msg)", "Send a message.") {
   janet_fixarity(argc, 1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
@@ -609,22 +608,29 @@ JANET_FN(cfun_message_send, "(sdbus/message-send msg)",
   return janet_cstringv(target);
 
 JANET_FN(cfun_message_get_destination, "(sdbus/message-get-destination msg)",
-         "Get the destination of a D-Bus message."){ MESSAGE_GET(destination) }
+         "Get the destination header field of a message."){
+  MESSAGE_GET(destination)
+}
 
 JANET_FN(cfun_message_get_path, "(sdbus/message-get-path msg)",
-         "Get the object path of a D-Bus message."){ MESSAGE_GET(path) }
+         "Get the object path header field of a message."){ MESSAGE_GET(path) }
 
 JANET_FN(cfun_message_get_interface, "(sdbus/message-get-interface msg)",
-         "Get the interface of a D-Bus message."){ MESSAGE_GET(interface) }
+         "Get the interface header field of a message."){
+  MESSAGE_GET(interface)
+}
 
 JANET_FN(cfun_message_get_member, "(sdbus/message-get-member msg)",
-         "Get the member of a D-Bus message."){ MESSAGE_GET(member) }
+         "Get the member header field of a message."){ MESSAGE_GET(member) }
 
 JANET_FN(cfun_message_get_sender, "(sdbus/message-get-sender msg)",
-         "Get the sender of a D-Bus message."){ MESSAGE_GET(sender) }
+         "Get the sender header field of a message."){ MESSAGE_GET(sender) }
 
-JANET_FN(cfun_message_unref, "(sdbus/message-unref msg)",
-         "Deallocate a D-Bus message.") {
+JANET_FN(
+    cfun_message_unref, "(sdbus/message-unref msg)",
+    "Deallocate a message.\n\n"
+    "This rarely needs to be called directly as messages will otherwise be "
+    "automatically garbage collected.") {
   janet_fixarity(argc, 1);
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
 
@@ -635,7 +641,7 @@ JANET_FN(cfun_message_unref, "(sdbus/message-unref msg)",
 }
 
 JANET_FN(cfun_message_append, "(sdbus/message-append msg signature & args)",
-         "Append arguments to a D-Bus message.") {
+         "Append arguments to a message per a D-Bus signature. Returns nil.") {
   janet_arity(argc, 3, -1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
@@ -647,7 +653,7 @@ JANET_FN(cfun_message_append, "(sdbus/message-append msg signature & args)",
 }
 
 JANET_FN(cfun_message_read, "(sdbus/message-read msg)",
-         "Read a single complete type from a D-Bus message."
+         "Read a single complete value from a D-Bus message."
          "Returns nil upon end of message.") {
   janet_fixarity(argc, 1);
 
@@ -663,9 +669,8 @@ JANET_FN(cfun_message_read, "(sdbus/message-read msg)",
 
 JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
          "Read all contents of a D-Bus message."
-         "If `msg` contains multiple complete types"
-         "returns an array, else a single value or nil if"
-         "`msg` is empty.") {
+         "Returns an array for multiple values, a single value for one, or nil "
+         "if empty.") {
   janet_fixarity(argc, 1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
@@ -678,7 +683,10 @@ JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
   return (array->count < 2) ? janet_array_pop(array) : janet_wrap_array(array);
 }
 
-JANET_FN(cfun_message_seal, "(sdbus/message-seal msg)", "Seal a message.") {
+JANET_FN(cfun_message_seal, "(sdbus/message-seal msg)",
+         "Seal a message to finalize its contents. "
+         "A sealed message becomes immutable.\n\n"
+         "This function is not typically required in user code.") {
   janet_fixarity(argc, 1);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);

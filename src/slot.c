@@ -31,7 +31,9 @@ static Janet dbus_slot_next(void *p, Janet key) {
 }
 
 JANET_FN(cfun_cancel_slot, "(sdbus/cancel call)",
-         "Cancel a pending asynchronous D-Bus call. Returns `nil`.") {
+         "Cancel and release a bus slot representing an open/pending resource "
+         "--- for example, a pending asynchronous method call, signal "
+         "subscription, or exported interface. Returns nil.") {
   janet_fixarity(argc, 1);
 
   sd_bus_slot **slot_ptr = janet_getabstract(argv, 0, &dbus_slot_type);
