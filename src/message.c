@@ -444,12 +444,12 @@ static Janet read_fd_type(sd_bus_message *msg) {
 
   int copy;
   if ((copy = fcntl(fd, F_DUPFD_CLOEXEC, 3)) == -1)
-    janet_panicf("fcntl(F_DUPFD_CLOEXEC) failed for fd=%d: %d", fd,
+    janet_panicf("fcntl(F_DUPFD_CLOEXEC) failed for fd=%d: %s", fd,
                  strerror(errno));
 
   int getfl;
   if ((getfl = fcntl(copy, F_GETFL)) == -1)
-    janet_panicf("fcntl(F_GETFL) failed for fd=%d: %d", copy, strerror(errno));
+    janet_panicf("fcntl(F_GETFL) failed for fd=%d: %s", copy, strerror(errno));
 
   int mode = getfl & O_ACCMODE;
   switch (mode) {
