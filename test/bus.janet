@@ -5,7 +5,7 @@
 
 (def bus (sdbus/open-user-bus))
 
-(assert (sdbus/bus-is-open bus))
+(assert (sdbus/bus-is-open? bus))
 (assert (string? (sdbus/get-unique-name bus)))
 (assert (= (sdbus/get-unique-name bus) (string bus)))
 (assert (deep= (keys bus) @[:close]))
@@ -20,7 +20,7 @@
 
 (sdbus/close-bus bus)
 
-(assert (not (sdbus/bus-is-open bus)))
+(assert (not (sdbus/bus-is-open? bus)))
 (assert (= (string bus) "closed"))
 (assert-error "Bus is closed" (sdbus/list-names bus))
 

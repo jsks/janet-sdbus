@@ -15,9 +15,18 @@
 
 (defn from-message [sig & args]
   (def msg (method-call-stub))
-  (sdbus/message-append msg sig ;args)
+  (unless (empty? sig)
+    (sdbus/message-append msg sig ;args))
   (sdbus/message-seal msg)
   (sdbus/message-read-all msg))
+
+# Sanity checks
+(def msg (method-call-stub))
+
+(assert (= (sdbus/message-get-destination msg) "org.freedesktop.DBus"))
+(assert (= (sdbus/message-get-path msg) "/org/freedesktop/DBus"))
+(assert (= (sdbus/message-get-interface msg) "org.freedesktop.DBus.Peer"))
+(assert (= (sdbus/message-get-member msg) "GetMachineId"))
 
 # Append basic types
 (defmacro test-basic [dbus-type value janet-type]

@@ -17,6 +17,14 @@
 (assert-error "Missing method" (sdbus/call-method ;interface "FakeMethod"))
 (assert-error "Missing signature" (sdbus/call-method ;interface "GetConnectionUnixUser"))
 
+# Test method call timeout
+(def msg (sdbus/message-new-method-call ;interface "GetId"))
+(with [ch (ev/chan)]
+  (sdbus/call-async bus msg ch 5)
+  (def [status message] (ev/take ch))
+  (assert (= status :error))
+  (assert (= (string/has-suffix? "Method call timed out" message))))
+
 ###
 # Properties
 (def interfaces (sdbus/get-property ;interface "Interfaces"))
