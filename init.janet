@@ -183,11 +183,14 @@
   (message-send error-msg))
 
 (defn- method-wrapper [fun out-signature]
-  (fn [msg]
+  (fn [bus msg]
+    (setdyn :sdbus/bus bus)
+    (setdyn :sdbus/path (message-get-path msg))
+    (setdyn :sdbus/interface (message-get-interface msg))
     (try (do
            (def reply (message-new-method-return msg))
            (def result (fun ;(normalized-read msg)))
-           (if-not (nil? result)
+           (if-not (empty? out-signature)
              (message-append reply out-signature result))
            (message-send reply))
       ([err fiber] (send-error msg err) (propagate err fiber)))))

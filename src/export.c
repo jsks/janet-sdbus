@@ -7,24 +7,30 @@
 
 #define FREE_EXPORT_STATE(state)                                               \
   do {                                                                         \
-    janet_gcunroot(state->methods);                                            \
+    janet_gcunroot(state->bus);                                                \
+    janet_gcunroot(state->members);                                            \
     janet_free(state->vtable);                                                 \
     janet_free(state);                                                         \
   } while (0)
 
 typedef struct {
   sd_bus_vtable *vtable;
-  Janet methods;
+  Janet bus;
+  Janet members;
 } ExportState;
 
-static ExportState *init_export_state(sd_bus_vtable *vtable, Janet methods) {
+static ExportState *init_export_state(Conn *conn, sd_bus_vtable *vtable,
+                                      Janet members) {
   ExportState *state;
   if (!(state = janet_malloc(sizeof(ExportState))))
     JANET_OUT_OF_MEMORY;
 
-  *state = (ExportState) { .vtable = vtable, .methods = methods };
+  *state = (ExportState) { .vtable  = vtable,
+                           .bus     = janet_wrap_abstract(conn),
+                           .members = members };
 
-  janet_gcroot(state->methods);
+  janet_gcroot(state->bus);
+  janet_gcroot(state->members);
 
   return state;
 }
@@ -87,12 +93,10 @@ static uint64_t sd_bus_flags(JanetKeyword keys) {
 
 static int method_handler(sd_bus_message *msg, void *userdata,
                           sd_bus_error *ret_error) {
-  UNUSED(ret_error);
-
   const char *member = sd_bus_message_get_member(msg);
   ExportState *state = userdata;
   JanetDictView env;
-  janet_dictionary_view(state->methods, &env.kvs, &env.len, &env.cap);
+  janet_dictionary_view(state->members, &env.kvs, &env.len, &env.cap);
 
   sd_bus_message **msg_ptr =
       janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
@@ -100,7 +104,7 @@ static int method_handler(sd_bus_message *msg, void *userdata,
 
   janet_gcroot(janet_wrap_abstract(msg_ptr));
 
-  Janet out, argv[] = { janet_wrap_abstract(msg_ptr) };
+  Janet out, argv[] = { state->bus, janet_wrap_abstract(msg_ptr) };
   Janet method =
       janet_dictionary_get(env.kvs, env.cap, janet_ckeywordv(member));
 
@@ -110,9 +114,15 @@ static int method_handler(sd_bus_message *msg, void *userdata,
   // JANET_SIGNAL_EVENT so let the fiber take care of sending the dbus
   // reply or any possible error messages. Alternatively, we could
   // block and wait on the method function fiber using a channel.
-  janet_pcall(f, 1, argv, &out, NULL);
+  JanetSignal signal = janet_pcall(f, 2, argv, &out, NULL);
 
   janet_gcunroot(janet_wrap_abstract(msg_ptr));
+
+  if (signal == JANET_SIGNAL_ERROR) {
+    return sd_bus_error_setf(ret_error, "org.janet.error",
+                             "internal method error: %s",
+                             (char *) janet_to_string(out));
+  }
 
   return 1;
 }
@@ -122,7 +132,7 @@ static int property_handler_core(const char *property, const char *method,
                                  sd_bus_error *ret_error) {
   ExportState *state = userdata;
   JanetDictView env;
-  janet_dictionary_view(state->methods, &env.kvs, &env.len, &env.cap);
+  janet_dictionary_view(state->members, &env.kvs, &env.len, &env.cap);
 
   Janet prop =
       janet_dictionary_get(env.kvs, env.cap, janet_ckeywordv(property));
@@ -145,10 +155,11 @@ static int property_handler_core(const char *property, const char *method,
 
   janet_gcunroot(janet_wrap_abstract(msg_ptr));
 
-  if (signal == JANET_SIGNAL_ERROR)
+  if (signal == JANET_SIGNAL_ERROR) {
     return sd_bus_error_setf(ret_error, "org.janet.error",
                              "internal property error: %s",
                              (char *) janet_to_string(out));
+  }
 
   return janet_checktype(out, JANET_NIL);
 }
@@ -300,7 +311,7 @@ JANET_FN(cfun_export, "(sdbus/export bus path interface env)",
     janet_panicf("No members to register for interface: %s", interface);
 
   sd_bus_vtable *vtable = create_vtable(env.len + 2, env);
-  ExportState *state    = init_export_state(vtable, argv[3]);
+  ExportState *state    = init_export_state(conn, vtable, argv[3]);
 
   sd_bus_slot **slot_ptr =
       janet_abstract(&dbus_slot_type, sizeof(sd_bus_slot *));

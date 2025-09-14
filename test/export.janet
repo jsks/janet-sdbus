@@ -11,6 +11,12 @@
           :Hidden (sdbus/method "a{is}i" "s" (fn [dict key] (dict key)) :h)
           :Suspend (sdbus/method "" "i" (fn [] (ev/sleep 0.01) 1))
           :ReturnFalse (sdbus/method "i" "b" (fn [x] false))
+          :EmitSignal (sdbus/method "" ""
+                                    (fn [] (sdbus/emit-signal (dyn :sdbus/bus)
+                                                              (dyn :sdbus/path)
+                                                              (dyn :sdbus/interface)
+                                                              "Signal"
+                                                              "o" "/example/path")))
 
           :Error (sdbus/method "" "" (fn [] (error "Test error")))
           :Mismatch (sdbus/method "" "as" (fn [] 1))
@@ -22,7 +28,7 @@
           :SignalMutable (sdbus/property "as" @["Hello" "World!"] :ew)
           :Invalidate (sdbus/property "b" true :iw)
 
-          :Signal (sdbus/signal "g")})
+          :Signal (sdbus/signal "o")})
 
 (sdbus/request-name bus "org.janet.UnitTests")
 (def slot (sdbus/export bus "/org/janet/UnitTests" "org.janet.UnitTests" env))
@@ -71,7 +77,8 @@
 (assert-error "Method throw" (:Error proxy))
 (assert-error "Mismatched signature" (:Mismatch proxy))
 (assert-error "Expected output" (:Expected proxy))
-(assert-error "Unexpected output" (:Unexpected proxy))
+
+(assert (nil? (:Unexpected proxy)))
 
 ###
 # Properties
@@ -89,9 +96,14 @@
 (sdbus/emit-signal bus "/org/janet/UnitTests" "org.janet.UnitTests"
                    "Signal" "o" "/org/janet/UnitTests")
 
-(def signal (ev/take ch))
-(assert (= (first signal) :ok))
-(assert (= (sdbus/message-read (get signal 1)) "/org/janet/UnitTests"))
+(def [status msg] (ev/take ch))
+(assert (= status :ok))
+(assert (= (sdbus/message-read msg) "/org/janet/UnitTests"))
+
+(:EmitSignal proxy)
+(def [status msg] (ev/take ch))
+(assert (= status :ok))
+(assert (= (sdbus/message-read msg) "/example/path"))
 
 (:unsubscribe proxy :Signal)
 
@@ -99,13 +111,13 @@
 (:subscribe proxy :PropertiesChanged ch)
 
 (:SignalMutable proxy @["Gone"])
-(def signal-result (ev/take ch))
-(def msg (sdbus/message-read-all (get signal-result 1)))
+(def [status msg] (ev/take ch))
+(assert (= status :ok))
 
+(def payload (sdbus/message-read-all msg))
 (assert (deep= (:SignalMutable proxy) @["Gone"]))
-(assert (= (first signal-result) :ok))
-(assert (= (first msg) "org.janet.UnitTests"))
-(assert (deep= (get msg 1) @{"SignalMutable" ["as" @["Gone"]]}))
+(assert (= (first payload) "org.janet.UnitTests"))
+(assert (deep= (get payload 1) @{"SignalMutable" ["as" @["Gone"]]}))
 
 # Value unchanged, no signal should be emitted
 (:SignalMutable proxy @["Gone"])
@@ -117,13 +129,12 @@
 
 # PropertyChanged signal w/o value, ie invalidation
 (:Invalidate proxy false)
-(def signal-result (ev/take ch))
-(def msg (sdbus/message-read-all (get signal-result 1)))
+(def [status msg] (ev/take ch))
+(assert (= status :ok))
 
-(assert (= (first signal-result) :ok))
-(assert (= (first msg) "org.janet.UnitTests"))
-(assert (deep= (get msg 2) @["Invalidate"]))
-
+(def payload (sdbus/message-read-all msg))
+(assert (= (first payload) "org.janet.UnitTests"))
+(assert (deep= (get payload 2) @["Invalidate"]))
 
 # We shouldn't receive additional signals after unsubscribing
 (:unsubscribe proxy :PropertiesChanged)
