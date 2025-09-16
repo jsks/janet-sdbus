@@ -7,7 +7,8 @@
 (defn call-method
   ```
   Send a method call to a D-Bus service. Suspends the current fiber
-  without blocking the event loop.
+  without blocking the event loop. Returns the contents of the reply
+  message.
 
   If the method expects arguments, the first rest argument must be a
   D-Bus signature string.
@@ -27,7 +28,9 @@
 
 (defn get-property
   ```
-  Get a property from a D-Bus service.
+  Get a property from a D-Bus service. Returns a variant in the form
+  of a tuple, `[type value]`, where `type` is a D-Bus signature
+  string.
   ```
   [bus destination path interface property]
   (call-method bus destination path
@@ -38,7 +41,7 @@
   ```
   Set a property on a D-Bus service.
 
-  `variant` must a D-Bus variant encoded as a Janet tuple with two
+  `variant` must be a D-Bus variant encoded as a Janet tuple with two
   members: a valid D-Bus signature string and a corresponding value.
   ```
   [bus destination path interface property variant]
@@ -99,7 +102,8 @@
 
 (defn introspect
   ```
-  Get introspection data for a D-Bus object. Returns a struct.
+  Get introspection data for a D-Bus object in the form of a Janet
+  struct.
   ```
   [bus destination path]
   (-> (call-method bus destination path "org.freedesktop.DBus.Introspectable" "Introspect")
@@ -150,7 +154,35 @@
            'property (proxy-property (string name) member)
            nil)))
 
-(defn proxy [bus spec interface]
+(defn proxy
+  ```
+  Create a proxy object for an interface.
+
+  `spec` must be the result of a call to `sdbus/introspect`, and
+  `interface` must be a keyword in `(spec :interfaces)`.
+
+  Returns a table exposing interface members according to the
+  following:
+
+  - **methods**: callable as variadic object methods in the form of
+    `(:<method-name> <proxy-object> & args)`. D-Bus signatures are
+    automatically handled based on introspection data, optional
+    rest arguments are passed directly as arguments to the underlying
+    D-Bus method. Returns the contents of the method call.
+
+  - **properties**: callable as object methods in the form of
+    `(:<property-name> <proxy-object> &opt value)`. When `value` is
+    nil, get the current value of the property. Otherwise, set the
+    property where `value` is a variant encoded as a Janet tuple.
+
+  - **signals**: subscribe via `(:subscribe <proxy-object
+    :<signal-name> &opt ch)`. When `ch` is a nil, a new channel is
+    created. Returns the channel.  Unsubscribe via `(:unsubscribe
+    <proxy-object> :<signal-name>)`.  PropertiesChanged signals for
+    the specific interface are also provided as a signal-name.
+
+  ```
+  [bus spec interface]
   (def obj @{:bus bus
              :destination (spec :destination)
              :path (spec :path)
@@ -182,12 +214,38 @@
   (when (deep-not= (self :value) value)
     (set (self :value) value)))
 
-(defn property [signature value &opt flags]
+(defn property
   ```
-  Create a D-Bus property definition map.
+  Create a D-Bus property definition map that may be passed as a
+  struct/table member to `sdbus/export`.
+
+  Accepts the following flags:
+
+  * `:d` - Annotate the property as deprecated.
+
+  * `:h` - Hide the property in introspection data.
+
+  * `:r` - Mark the property as constant. Prevents emitting
+    PropertiesChanged signals for the property.
+
+  * `:e` - Emit a PropertiesChanged signal when the underlying property
+    value changes.
+
+  * `:i` - Emit a PropertiesChanged signal when the underlying property
+    value changes, but without the value contents in the signal
+    message.
+
+  * `:x` - Annotate the property as requiring an explicit request for
+    the property to be shown. Cannot be combined with `:e`. See the
+    sd-bus documentation for SD_BUS_VTABLE_PROPERTY_EXPLICIT for more
+    information.
+
+  * `:w` - Set the property as writable.
+
   ```
+  [signature value &opt flags]
   (default flags "")
-  (when (not (string/check-set :dhsreixw flags))
+  (when (not (string/check-set :dhreixw flags))
     (errorf "Invalid property flags: %s" flags))
   @{:type 'property
     :flags flags
@@ -214,10 +272,24 @@
            (message-send reply))
       ([err fiber] (send-error msg err) (propagate err fiber)))))
 
-(defn method [in-signature out-signature fun &opt flags]
+(defn method
   ```
-  Create a D-Bus method definition map.
+  Create a D-Bus method definition map that may be passed as a
+  struct/table member to `sdbus/export`.
+
+  Accepts the following flags:
+
+  - `:d` - Annotate the method as deprecated.
+
+  - `:h` - Hide the method in introspection data.
+
+  - `:s` - Mark the method as sensitive, see
+    `sd_bus_message_sensitive(3)` and SD_BUS_VTABLE_SENSITIVE for more
+    information.
+
+  - `:n` - Mark the method as not returning a reply.
   ```
+  [in-signature out-signature fun &opt flags]
   (default in-signature "")
   (default out-signature "")
   (default flags "")
@@ -231,11 +303,18 @@
 
 (defn signal
   ```
-    Create a D-Bus signal definition map.
-    ```
+  Create a D-Bus signal definition map that may be passed as a
+  struct/table member to `sdbus/export`.
+
+  Accepts the following flags:
+
+  - `:d` - Annotate the signal as deprecated.
+
+  - `:h` - Hide the signal in introspection data.
+  ```
   [signature &opt flags]
   (default flags "")
-  (when (not (string/check-set ":dhs" flags))
+  (when (not (string/check-set ":dh" flags))
     (errorf "Invalid signal flags: %s" flags))
   {:type 'signal
    :flags flags
@@ -247,9 +326,27 @@
 
 (defn request-name
   ```
-  * `:a` --- DBUS_NAME_FLAG_ALLOW_REPLACEMENT
-  * `:n` --- DBUS_NAME_FLAG_DO_NOT_QUEUE
-  * `:r` --- DBUS_NAME_FLAG_REPLACE_EXISTING
+  Request ownership of a D-Bus name from the bus. Returns nil upon
+  success, or :queued if placed in the ownership queue for
+  `name`. Raises an error upon failure.
+
+  Accepts the following flags:
+
+  - `:a` - If the caller succeeds in acquiring ownership of the name,
+    allows another D-Bus peer with the
+    `DBUS_NAME_FLAG_REPLACE_EXISTING` flag set to replace the caller
+    as owner. Corresponds to the `DBUS_NAME_FLAG_ALLOW_REPLACEMENT`
+    flag in the D-Bus specification.
+
+  - `:n` - Do not place the caller in the ownership queue if `name` is
+    already owned. Corresponds to the `DBUS_NAME_FLAG_DO_NOT_QUEUE`
+    flag in the D-Bus specification.
+
+  - `:r` - If `name` is already owned and the owner has specified
+    `DBUS_NAME_FLAG_ALLOW_REPLACEMENT`, replace the current
+    owner. Corresponds to the `DBUS_NAME_FLAG_REPLACE_EXISTING` flag
+    in the D-Bus specification.
+
   ```
   [bus name &opt flags]
   (default flags "")
@@ -266,6 +363,10 @@
     (errorf "%s: unknown error")))
 
 (defn release-name
+  ```
+  Release ownership of a D-Bus name. Returns nil upon success,
+  otherwise raises an error.
+  ```
   [bus name]
   (def return-code (call-method bus ;dbus-interface "ReleaseName" "s" name))
   (case return-code
