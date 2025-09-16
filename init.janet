@@ -64,20 +64,38 @@
        (keep |(unless (nil? $1) (string/format "%s='%s'" $0 $1)) ,$syms ,$values))))
 
 (defn subscribe-signal
-  [bus member chan &named sender path interface argN]
-  (default argN [])
-  (def rules (symbolic-kvs interface member path sender))
-  (def arg-matches (map (fn [[k v]] (string/format "arg%d='%s'" k v)) (pairs argN)))
-  (def match-rule (-> (array/concat rules arg-matches)
-                      (string/join ",")))
-  (match-signal bus match-rule chan))
+  ```
+  Subscribe to a D-Bus signal. Returns a bus slot that may be passed
+  to `sdbus/cancel` to unsubscribe.
 
-(defn subscribe-properties-changed [bus interface chan &named sender path]
-  (subscribe-signal bus "PropertiesChanged" chan
-                    :interface "org.freedesktop.DBus.Properties"
-                    :sender sender
-                    :path path
-                    :argN [interface]))
+  This builds a match rule, "type='signal',member='<member>'", with
+  optional sender, path, and interface, and forwards it to
+  `sdbus/match-async`.
+
+  Signal messages are written to the channel, `chan`, as `[:ok msg]`,
+  `[:error msg]`, or `[:close msg]`.
+  ```
+  [bus member chan &named sender path interface]
+  (def rules (-> (symbolic-kvs member sender path interface)
+                 (string/join ",")))
+  (match-async bus rules chan))
+
+(defn subscribe-properties-changed
+  ```
+  Subscribe to a PropertiesChanged signal for a given
+  interface. Returns a bus slot that may be passed to `sdbus/cancel`
+  to unsubscribe.
+
+  PropertiesChanged messages are written to the channel, `chan`, as
+  `[:ok msg]`, `[:error msg]`, or `[:close msg]`.
+  ```
+  [bus interface chan &named sender path]
+  (def base ["type='signal'" "member='PropertiesChanged'"
+             "interface='org.freedesktop.DBus.Properties'"])
+  (def rules (-> (symbolic-kvs sender path)
+                 (array/concat base)
+                 (string/join ",")))
+  (match-async bus rules chan))
 
 (defn introspect
   ```
