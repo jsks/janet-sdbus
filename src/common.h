@@ -66,6 +66,10 @@ typedef struct AsyncCall {
   sd_bus_slot **slot;
   JanetChannel *chan;
   struct AsyncCall *next, *prev;
+  enum {
+    Call,
+    Match
+  } kind;
 } AsyncCall;
 
 extern AsyncCall *create_async_call(JanetChannel *);

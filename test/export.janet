@@ -145,11 +145,21 @@
 
 (assert-error "Unsubscribe from known signal" (:unsubscribe proxy :BogusSignal))
 
-(sdbus/cancel slot)
-(assert-error "Removed interface" (:Empty proxy))
+###
+# Matches
+(def ch (ev/chan))
+(sdbus/match-async bus "type='method_call',member='Add',interface='org.janet.UnitTests'" ch)
+(:Add proxy 1 2)
+
+(def [status msg] (ev/take ch))
+(assert (= status :ok))
+(assert (deep= (sdbus/message-read-all msg) @[1 2]))
 
 ###
 # Misc. error cases
+(sdbus/cancel slot)
+(assert-error "Removed interface" (:Empty proxy))
+
 (def service [bus "/org/janet/ErrorCases" "org.janet.ErrorCases"])
 
 (assert-error "Empty interface" (sdbus/export ;service {}))

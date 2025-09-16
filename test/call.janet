@@ -37,13 +37,29 @@
 ###
 # Signals
 (def ch (ev/chan))
-(sdbus/subscribe-signal bus "NameOwnerChanged" ch :interface "org.freedesktop.DBus")
+(def slot (sdbus/subscribe-signal bus "NameOwnerChanged" ch
+                                  :interface "org.freedesktop.DBus"))
 (sdbus/call-method ;interface "RequestName" "su" "org.janet.UnitTests" 0)
 
-(def result (ev/take ch))
-(assert (= (first result) :ok))
-(assert (= (sdbus/message-read (get result 1)) "org.janet.UnitTests"))
+(def [status msg] (ev/take ch))
+(assert (= status :ok))
+(assert (= (sdbus/message-read msg) "org.janet.UnitTests"))
 
+(sdbus/cancel slot)
+
+###
+# Matches
+(sdbus/match-async bus "type='method_return',sender='org.freedesktop.DBus'" ch)
+(def names (sdbus/call-method ;interface "ListNames"))
+
+(assert (= (ev/count ch) 2))
+
+(def [status _] (ev/take ch))
+(assert (= status :ok))
+
+(def [status msg] (ev/take ch))
+(assert (= status :ok))
+(assert (deep= (sdbus/message-read msg) names))
 
 (sdbus/close-bus bus)
 
