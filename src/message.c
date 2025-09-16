@@ -683,6 +683,17 @@ JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
   return (array->count < 2) ? janet_array_pop(array) : janet_wrap_array(array);
 }
 
+JANET_FN(cfun_message_rewind, "(sdbus/message-rewind msg)",
+         "Rewind the read cursor to the beginning of a message."
+         "Returns nil.") {
+  janet_fixarity(argc, 1);
+
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+
+  CALL_SD_BUS_FUNC(sd_bus_message_rewind, *msg_ptr, 1);
+  return janet_wrap_nil();
+}
+
 JANET_FN(cfun_message_seal, "(sdbus/message-seal msg)",
          "Seal a message to finalize its contents. "
          "A sealed message becomes immutable.\n\n"
@@ -726,10 +737,11 @@ JanetRegExt cfuns_message[] = {
   JANET_REG("message-get-interface", cfun_message_get_interface),
   JANET_REG("message-get-member", cfun_message_get_member),
   JANET_REG("message-get-sender", cfun_message_get_sender),
-  JANET_REG("message-seal", cfun_message_seal),
   JANET_REG("message-append", cfun_message_append),
   JANET_REG("message-read", cfun_message_read),
   JANET_REG("message-read-all", cfun_message_read_all),
+  JANET_REG("message-rewind", cfun_message_rewind),
+  JANET_REG("message-seal", cfun_message_seal),
   JANET_REG("message-dump", cfun_message_dump),
   JANET_REG_END
 };
