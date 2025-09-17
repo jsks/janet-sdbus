@@ -28,6 +28,15 @@
 (assert (= (sdbus/message-get-interface msg) "org.freedesktop.DBus.Peer"))
 (assert (= (sdbus/message-get-member msg) "GetMachineId"))
 
+(sdbus/message-append msg "ss" "Hello" "World")
+(sdbus/message-seal msg)
+
+(def content (sdbus/message-read-all msg))
+(assert (nil? (sdbus/message-read-all msg)))
+
+(sdbus/message-rewind msg)
+(assert (deep= (sdbus/message-read-all msg) content))
+
 # Append basic types
 (defmacro test-basic [dbus-type value janet-type]
   (with-syms [$dbus-type $value $janet-type $out]
