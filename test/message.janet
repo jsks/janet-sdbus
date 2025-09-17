@@ -18,7 +18,7 @@
   (unless (empty? sig)
     (sdbus/message-append msg sig ;args))
   (sdbus/message-seal msg)
-  (sdbus/message-read-all msg))
+  (sdbus/message-read msg :all))
 
 # Sanity checks
 (def msg (method-call-stub))
@@ -31,11 +31,17 @@
 (sdbus/message-append msg "ss" "Hello" "World")
 (sdbus/message-seal msg)
 
-(def content (sdbus/message-read-all msg))
-(assert (nil? (sdbus/message-read-all msg)))
+(def content @[])
+(array/push content (sdbus/message-read msg))
+(assert (deep= content @["Hello"]))
+
+(array/push content (sdbus/message-read msg))
+(assert (deep= content @["Hello" "World"]))
+
+(assert (nil? (sdbus/message-read msg)))
 
 (sdbus/message-rewind msg)
-(assert (deep= (sdbus/message-read-all msg) content))
+(assert (deep= (sdbus/message-read msg :all) content))
 
 # Append basic types
 (defmacro test-basic [dbus-type value janet-type]

@@ -46,7 +46,7 @@
     # name. We can still get it though by inspecting the message
     # header.
     (let [object (sdbus/message-get-path msg)
-          @[_ property] (sdbus/message-read-all msg)]
+          @[_ property] (sdbus/message-read msg :all)]
       (when (connected? property)
         (:Notify notifications "" 0 "" "Bluetooth"
                  (string/format "Connected: %s" (device-name sys object))

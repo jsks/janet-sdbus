@@ -21,7 +21,7 @@
   (with [ch (ev/chan)]
     (call-async bus msg ch)
     (match (ev/take ch)
-      [:ok msg] (message-read-all msg)
+      [:ok msg] (message-read msg :all)
       [:error err] (error err)
       [:close _] (error "D-Bus connection closed")
       result (errorf "Unexpected result: %p" result))))
@@ -197,7 +197,7 @@
        (merge-into obj)))
 
 (defn- normalized-read [msg]
-  (match (message-read-all msg)
+  (match (message-read msg :all)
     nil []
     [& rest] rest
     x [x]))
@@ -210,7 +210,7 @@
   (message-append reply (self :sig) (self :value)))
 
 (defn- property-setter [self msg]
-  (def value (message-read-all msg))
+  (def value (message-read msg :rest))
   (when (deep-not= (self :value) value)
     (set (self :value) value)))
 

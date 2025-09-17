@@ -114,7 +114,7 @@
 (def [status msg] (ev/take ch))
 (assert (= status :ok))
 
-(def payload (sdbus/message-read-all msg))
+(def payload (sdbus/message-read msg :all))
 (assert (deep= (:SignalMutable proxy) @["Gone"]))
 (assert (= (first payload) "org.janet.UnitTests"))
 (assert (deep= (get payload 1) @{"SignalMutable" ["as" @["Gone"]]}))
@@ -132,7 +132,7 @@
 (def [status msg] (ev/take ch))
 (assert (= status :ok))
 
-(def payload (sdbus/message-read-all msg))
+(def payload (sdbus/message-read msg :all))
 (assert (= (first payload) "org.janet.UnitTests"))
 (assert (deep= (get payload 2) @["Invalidate"]))
 
@@ -153,7 +153,7 @@
 
 (def [status msg] (ev/take ch))
 (assert (= status :ok))
-(assert (deep= (sdbus/message-read-all msg) @[1 2]))
+(assert (deep= (sdbus/message-read msg :all) @[1 2]))
 
 ###
 # Misc. error cases

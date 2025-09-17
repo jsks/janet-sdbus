@@ -652,34 +652,44 @@ JANET_FN(cfun_message_append, "(sdbus/message-append msg signature & args)",
   return janet_wrap_nil();
 }
 
-JANET_FN(cfun_message_read, "(sdbus/message-read msg)",
-         "Read a single complete value from a D-Bus message."
-         "Returns nil upon end of message.") {
-  janet_fixarity(argc, 1);
-
-  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
-
-  // Follow Janet's file/read and return nil on eof
-  Janet obj;
-  if (read_complete_type(*msg_ptr, &obj) == 0)
-    return janet_wrap_nil();
-
-  return obj;
-}
-
-JANET_FN(cfun_message_read_all, "(sdbus/message-read-all msg)",
-         "Read all contents of a D-Bus message."
-         "Returns an array for multiple values, a single value for one, or nil "
-         "if empty.") {
-  janet_fixarity(argc, 1);
+JANET_FN(
+    cfun_message_read, "(sdbus/message-read msg &opt what)",
+    "Read items from a D-Bus message. Returns an array for "
+    "multiple items, a single value for one, or nil if empty or upon "
+    "end-of-message.\n\n"
+    "The optional argument `what` may be one of:\n"
+    "- `:all` - read the entire message from start\n"
+    "- `:rest` - read from the current cursor position until end-of-message\n"
+    "- `n` (positive integer) - read up to `n` items") {
+  janet_arity(argc, 1, 2);
 
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
 
   JanetArray *array = janet_array(1);
-  Janet obj;
-  while (read_complete_type(*msg_ptr, &obj) > 0)
-    janet_array_push(array, obj);
+  Janet item;
+  if (argc == 2 && janet_checktype(argv[1], JANET_KEYWORD)) {
+    JanetKeyword sym = janet_getkeyword(argv, 1);
+    if (janet_cstrcmp(sym, "all") == 0)
+      CALL_SD_BUS_FUNC(sd_bus_message_rewind, *msg_ptr, true);
+    else if (janet_cstrcmp(sym, "rest") != 0)
+      janet_panicf("invalid keyword argument, %v", sym);
 
+    while (read_complete_type(*msg_ptr, &item) > 0)
+      janet_array_push(array, item);
+  } else {
+    int32_t n = janet_optinteger(argv, argc, 1, 1);
+    if (n < 0)
+      janet_panic("expected positive integer argument");
+
+    for (int32_t i = 0; i < n; i++) {
+      if (read_complete_type(*msg_ptr, &item) == 0)
+        break;
+
+      janet_array_push(array, item);
+    }
+  }
+
+  // Follow Janet's file/read and return nil on end-of-message
   return (array->count < 2) ? janet_array_pop(array) : janet_wrap_array(array);
 }
 
@@ -739,7 +749,6 @@ JanetRegExt cfuns_message[] = {
   JANET_REG("message-get-sender", cfun_message_get_sender),
   JANET_REG("message-append", cfun_message_append),
   JANET_REG("message-read", cfun_message_read),
-  JANET_REG("message-read-all", cfun_message_read_all),
   JANET_REG("message-rewind", cfun_message_rewind),
   JANET_REG("message-seal", cfun_message_seal),
   JANET_REG("message-dump", cfun_message_dump),
