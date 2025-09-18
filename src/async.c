@@ -193,6 +193,9 @@ static JanetStream *janet_poll(Conn *conn, int fd, uint32_t flags,
 
 void init_async(Conn *conn) {
   int timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+  if (timer_fd == -1)
+    janet_panicf("failed to call timerfd_create: %s", strerror(errno));
+
   conn->timer =
       janet_poll(conn, timer_fd, JANET_STREAM_READABLE, timer_callback);
 
