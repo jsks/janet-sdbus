@@ -225,8 +225,9 @@
 
   * `:h` - Hide the property in introspection data.
 
-  * `:r` - Mark the property as constant. Prevents emitting
-    PropertiesChanged signals for the property.
+  * `:r` - Mark the property as constant for its entire
+    lifetime. Prevents emitting PropertiesChanged signals for the
+    property.
 
   * `:e` - Emit a PropertiesChanged signal when the underlying property
     value changes.
@@ -240,7 +241,7 @@
     sd-bus documentation for SD_BUS_VTABLE_PROPERTY_EXPLICIT for more
     information.
 
-  * `:w` - Set the property as writable.
+  * `:w` - Set the property as writable by D-Bus clients.
 
   ```
   [signature value &opt flags]
