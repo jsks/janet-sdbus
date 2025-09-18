@@ -5,13 +5,13 @@
 
 #define FREE_CALL_STATE(state)                                                 \
   do {                                                                         \
-    janet_free(state->call);                                                   \
+    janet_free(state->pending);                                                \
     janet_free(state);                                                         \
   } while (0)
 
 typedef struct {
   Conn *conn;
-  AsyncCall *call;
+  AsyncPending *pending;
 } AsyncState;
 
 static JanetString format_error(sd_bus_error *error) {
@@ -23,19 +23,20 @@ static JanetString format_error(sd_bus_error *error) {
 }
 
 static AsyncState *init_callback_state(Conn *conn, JanetChannel *ch) {
-  AsyncCall *call = create_async_call(ch);
+  AsyncPending *pending = create_async_pending(ch);
 
   AsyncState *state;
   if (!(state = janet_malloc(sizeof(AsyncState))))
     JANET_OUT_OF_MEMORY;
-  *state = (AsyncState) { .conn = conn, .call = call };
+  *state = (AsyncState) { .conn = conn, .pending = pending };
 
   return state;
 }
 
 static void destroy_call_callback(void *userdata) {
-  AsyncState *state = userdata;
-  dequeue_call(&state->conn->queue, state->call);
+  AsyncState *state    = userdata;
+  state->pending->slot = NULL;
+  dequeue_pending(&state->conn->queue, state->pending);
 
   FREE_CALL_STATE(state);
 }
@@ -44,14 +45,14 @@ static int signal_install_handler(sd_bus_message *msg, void *userdata,
                                   sd_bus_error *ret_error) {
   UNUSED(ret_error);
 
-  AsyncState *state = userdata;
-  AsyncCall *call   = state->call;
+  AsyncState *state     = userdata;
+  AsyncPending *pending = state->pending;
 
   if (sd_bus_message_is_method_error(msg, NULL)) {
     sd_bus_error *error = (sd_bus_error *) sd_bus_message_get_error(msg);
     JanetString str     = format_error(error);
 
-    CHAN_PUSH(call->chan, janet_ckeywordv("error"), janet_wrap_string(str));
+    CHAN_PUSH(pending->chan, janet_ckeywordv("error"), janet_wrap_string(str));
   }
 
   return 0;
@@ -75,26 +76,26 @@ static int message_handler(sd_bus_message *reply, void *userdata,
                            sd_bus_error *ret_error) {
   UNUSED(ret_error);
 
-  AsyncState *state = userdata;
-  Conn *conn        = state->conn;
-  AsyncCall *call   = state->call;
+  AsyncState *state     = userdata;
+  Conn *conn            = state->conn;
+  AsyncPending *pending = state->pending;
 
   uint8_t type;
   sd_bus_message_get_type(reply, &type);
 
   switch (type) {
     case SD_BUS_MESSAGE_METHOD_RETURN:
-      if (call->kind == Call)
-        dequeue_call(&conn->queue, call);
+      if (pending->kind == Call)
+        dequeue_pending(&conn->queue, pending);
     /* fallthrough */
     case SD_BUS_MESSAGE_METHOD_CALL: {
       sd_bus_message **msg_ptr =
           janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
 
-      *msg_ptr = (call->kind == Call) ? sd_bus_message_ref(reply)
-                                      : message_copy(conn->bus, reply, type);
+      *msg_ptr = (pending->kind == Call) ? sd_bus_message_ref(reply)
+                                         : message_copy(conn->bus, reply, type);
 
-      CHAN_PUSH(call->chan, janet_ckeywordv("ok"),
+      CHAN_PUSH(pending->chan, janet_ckeywordv("ok"),
                 janet_wrap_abstract(msg_ptr));
       break;
     }
@@ -103,19 +104,20 @@ static int message_handler(sd_bus_message *reply, void *userdata,
           janet_abstract(&dbus_message_type, sizeof(sd_bus_message *));
       *msg_ptr = sd_bus_message_ref(reply);
 
-      CHAN_PUSH(call->chan, janet_ckeywordv("ok"),
+      CHAN_PUSH(pending->chan, janet_ckeywordv("ok"),
                 janet_wrap_abstract(msg_ptr));
       break;
     }
 
     case SD_BUS_MESSAGE_METHOD_ERROR: {
-      if (call->kind == Call)
-        dequeue_call(&conn->queue, call);
+      if (pending->kind == Call)
+        dequeue_pending(&conn->queue, pending);
 
       sd_bus_error *error = (sd_bus_error *) sd_bus_message_get_error(reply);
       JanetString str     = format_error(error);
 
-      CHAN_PUSH(call->chan, janet_ckeywordv("error"), janet_wrap_string(str));
+      CHAN_PUSH(pending->chan, janet_ckeywordv("error"),
+                janet_wrap_string(str));
       break;
     }
 
@@ -143,24 +145,25 @@ JANET_FN(
   JanetChannel *ch         = janet_getabstract(argv, 2, &janet_channel_type);
   uint64_t timeout         = janet_optinteger64(argv, argc, 3, 0);
 
-  AsyncState *state = init_callback_state(conn, ch);
-  state->call->kind = Call;
+  AsyncState *state    = init_callback_state(conn, ch);
+  state->pending->kind = Call;
 
-  int rv = sd_bus_call_async(conn->bus, state->call->slot, *msg_ptr,
+  int rv = sd_bus_call_async(conn->bus, state->pending->slot, *msg_ptr,
                              message_handler, state, timeout);
   if (rv < 0) {
     FREE_CALL_STATE(state);
     janet_panicf("failed to call sd_bus_call_async: %s", strerror(-rv));
   }
 
-  sd_bus_slot_set_floating(*state->call->slot, 1);
+  sd_bus_slot_set_floating(*state->pending->slot, 1);
 
-  queue_call(&conn->queue, state->call);
-  sd_bus_slot_set_destroy_callback(*state->call->slot, destroy_call_callback);
+  queue_pending(&conn->queue, state->pending);
+  sd_bus_slot_set_destroy_callback(*state->pending->slot,
+                                   destroy_call_callback);
 
   settimeout(conn);
 
-  return janet_wrap_abstract(state->call->slot);
+  return janet_wrap_abstract(state->pending->slot);
 }
 
 JANET_FN(
@@ -179,11 +182,11 @@ JANET_FN(
   const char *match = janet_getcstring(argv, 1);
   JanetChannel *ch  = janet_getabstract(argv, 2, &janet_channel_type);
 
-  AsyncState *state = init_callback_state(conn, ch);
-  state->call->kind = Match;
+  AsyncState *state    = init_callback_state(conn, ch);
+  state->pending->kind = Match;
 
   int rv =
-      sd_bus_add_match_async(conn->bus, state->call->slot, match,
+      sd_bus_add_match_async(conn->bus, state->pending->slot, match,
                              message_handler, signal_install_handler, state);
 
   if (rv < 0) {
@@ -191,12 +194,13 @@ JANET_FN(
     janet_panicf("failed to call sd_bus_add_match_async: %s", strerror(-rv));
   }
 
-  sd_bus_slot_set_floating(*state->call->slot, 1);
+  sd_bus_slot_set_floating(*state->pending->slot, 1);
 
-  queue_call(&conn->queue, state->call);
-  sd_bus_slot_set_destroy_callback(*state->call->slot, destroy_call_callback);
+  queue_pending(&conn->queue, state->pending);
+  sd_bus_slot_set_destroy_callback(*state->pending->slot,
+                                   destroy_call_callback);
 
-  return janet_wrap_abstract(state->call->slot);
+  return janet_wrap_abstract(state->pending->slot);
 }
 
 JanetRegExt cfuns_call[] = { JANET_REG("call-async", cfun_call_async),

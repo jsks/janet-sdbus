@@ -62,50 +62,50 @@ void settimeout(Conn *conn) {
     janet_panicf("timerfd_settime: %s", strerror(errno));
 }
 
-AsyncCall *create_async_call(JanetChannel *ch) {
-  AsyncCall *call;
-  if (!(call = janet_malloc(sizeof(AsyncCall))))
+AsyncPending *create_async_pending(JanetChannel *ch) {
+  AsyncPending *pending;
+  if (!(pending = janet_malloc(sizeof(AsyncPending))))
     JANET_OUT_OF_MEMORY;
 
-  call->chan  = ch;
-  call->slot  = janet_abstract(&dbus_slot_type, sizeof(sd_bus_slot *));
-  *call->slot = NULL;
+  pending->chan  = ch;
+  pending->slot  = janet_abstract(&dbus_slot_type, sizeof(sd_bus_slot *));
+  *pending->slot = NULL;
 
-  return call;
+  return pending;
 }
 
-void queue_call(AsyncCall **head, AsyncCall *call) {
-  call->prev = NULL;
-  call->next = *head;
+void queue_pending(AsyncPending **head, AsyncPending *pending) {
+  pending->prev = NULL;
+  pending->next = *head;
 
   if (*head)
-    (*head)->prev = call;
+    (*head)->prev = pending;
 
-  *head = call;
+  *head = pending;
 }
 
-void dequeue_call(AsyncCall **head, AsyncCall *call) {
+void dequeue_pending(AsyncPending **head, AsyncPending *pending) {
   if (!head || !*head)
     return;
 
-  if (call->prev)
-    call->prev->next = call->next;
+  if (pending->prev)
+    pending->prev->next = pending->next;
   else
-    *head = call->next;
+    *head = pending->next;
 
-  if (call->next)
-    call->next->prev = call->prev;
+  if (pending->next)
+    pending->next->prev = pending->prev;
 }
 
-static void closeall_pending_calls(Conn *conn, Janet status, Janet msg) {
+static void closeall_pending(Conn *conn, Janet status, Janet msg) {
   if (!conn->queue)
     return;
 
   Janet tuple = janet_wrap_tuple(TUPLE(status, msg));
 
-  AsyncCall *p = conn->queue;
+  AsyncPending *p = conn->queue;
   while (p) {
-    AsyncCall *next = p->next;
+    AsyncPending *next = p->next;
 
     janet_channel_give(p->chan, tuple);
 
@@ -154,7 +154,7 @@ static void bus_callback(JanetFiber *fiber, JanetAsyncEvent event) {
     case JANET_ASYNC_EVENT_ERR: {
       Janet status = janet_ckeywordv("error"),
             msg    = janet_cstringv("D-Bus connection error");
-      closeall_pending_calls(conn, status, msg);
+      closeall_pending(conn, status, msg);
 
       CANCEL_LISTENER(fiber, msg);
       return;
@@ -163,7 +163,7 @@ static void bus_callback(JanetFiber *fiber, JanetAsyncEvent event) {
     case JANET_ASYNC_EVENT_CLOSE: {
       Janet status = janet_ckeywordv("close"),
             msg    = janet_cstringv("D-Bus connection closed");
-      closeall_pending_calls(conn, status, msg);
+      closeall_pending(conn, status, msg);
 
       END_LISTENER(fiber);
       return;

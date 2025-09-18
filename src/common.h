@@ -52,29 +52,29 @@ int check_sd_bus_return(const char *, int);
 
 // D-Bus bus connection
 typedef struct {
-  sd_bus *bus;             // D-Bus message bus
-  JanetStream *bus_stream; // Unix fd for bus connection
-  JanetStream *timer;      // Timer fd for bus timeouts
-  struct AsyncCall *queue; // Queue of pending async calls
+  sd_bus *bus;                // D-Bus message bus
+  JanetStream *bus_stream;    // Unix fd for bus connection
+  JanetStream *timer;         // Timer fd for bus timeouts
+  struct AsyncPending *queue; // Queue of pending async calls
 } Conn;
 
 extern const JanetAbstractType dbus_bus_type;
 extern JanetRegExt cfuns_bus[];
 
 // Pending async call
-typedef struct AsyncCall {
+typedef struct AsyncPending {
   sd_bus_slot **slot;
   JanetChannel *chan;
-  struct AsyncCall *next, *prev;
+  struct AsyncPending *next, *prev;
   enum {
     Call,
     Match
   } kind;
-} AsyncCall;
+} AsyncPending;
 
-extern AsyncCall *create_async_call(JanetChannel *);
-extern void queue_call(AsyncCall **, AsyncCall *);
-extern void dequeue_call(AsyncCall **, AsyncCall *);
+extern AsyncPending *create_async_pending(JanetChannel *);
+extern void queue_pending(AsyncPending **, AsyncPending *);
+extern void dequeue_pending(AsyncPending **, AsyncPending *);
 extern void init_async(Conn *);
 extern void settimeout(Conn *);
 extern void setevents(Conn *);
