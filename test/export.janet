@@ -24,8 +24,8 @@
           :Unexpected (sdbus/method "" "" (fn [] "Hello World!"))
 
           :Constant (sdbus/property "n" 13)
-          :NoSignalMutable (sdbus/property "i" 10 :w)
-          :SignalMutable (sdbus/property "as" @["Hello" "World!"] :ew)
+          :MutableWithSignal (sdbus/property "as" @["Hello" "World!"] :ew)
+          :MutableNoSignal (sdbus/property "i" 10 :w)
           :Invalidate (sdbus/property "b" true :iw)
 
           :Signal (sdbus/signal "o")})
@@ -49,8 +49,8 @@
 (assert (nil? (members :Hidden)))
 
 (assert (= (get-in members [:Constant :access]) "read"))
-(assert (= (get-in members [:NoSignalMutable :access]) "readwrite"))
-(assert (= (get-in members [:SignalMutable :access]) "readwrite"))
+(assert (= (get-in members [:MutableNoSignal :access]) "readwrite"))
+(assert (= (get-in members [:MutableWithSignal :access]) "readwrite"))
 (assert (= (get-in members [:Invalidate :access]) "readwrite"))
 
 (assert (deep= (get-in members [:Constant :annotations])
@@ -83,11 +83,11 @@
 ###
 # Properties
 (assert (= (:Constant proxy) 13))
-(assert (deep= (:SignalMutable proxy) @["Hello" "World!"]))
+(assert (deep= (:MutableWithSignal proxy) @["Hello" "World!"]))
 (assert (= (:Invalidate proxy) true))
 
 (assert-error "Read-only property" (:Constant proxy 14))
-(assert-error "Invalid type" (:SignalMutable proxy true))
+(assert-error "Invalid type" (:MutableWithSignal proxy true))
 
 ###
 # Signals
@@ -110,21 +110,21 @@
 # PropertyChanged signal w/ value
 (:subscribe proxy :PropertiesChanged ch)
 
-(:SignalMutable proxy @["Gone"])
+(:MutableWithSignal proxy @["Gone"])
 (def [status msg] (ev/take ch))
 (assert (= status :ok))
 
 (def payload (sdbus/message-read msg :all))
-(assert (deep= (:SignalMutable proxy) @["Gone"]))
+(assert (deep= (:MutableWithSignal proxy) @["Gone"]))
 (assert (= (first payload) "org.janet.UnitTests"))
-(assert (deep= (get payload 1) @{"SignalMutable" ["as" @["Gone"]]}))
+(assert (deep= (get payload 1) @{"MutableWithSignal" ["as" @["Gone"]]}))
 
 # Value unchanged, no signal should be emitted
-(:SignalMutable proxy @["Gone"])
+(:MutableWithSignal proxy @["Gone"])
 (assert (zero? (ev/count ch)))
 
 # Value changed for property that should not emit signal
-(:NoSignalMutable proxy 42)
+(:MutableNoSignal proxy 42)
 (assert (zero? (ev/count ch)))
 
 # PropertyChanged signal w/o value, ie invalidation
@@ -138,7 +138,7 @@
 
 # We shouldn't receive additional signals after unsubscribing
 (:unsubscribe proxy :PropertiesChanged)
-(:SignalMutable proxy @["Missed"])
+(:MutableWithSignal proxy @["Missed"])
 
 (assert (empty? (proxy :subscriptions)))
 (assert (zero? (ev/count ch)))
