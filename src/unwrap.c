@@ -67,7 +67,7 @@ static void dbus_type_error(const char *janet_type, Janet x) {
   char sigbuf[ERRCTX_MAX_SIG_LEN];
   if (!(format_errctx(sigbuf, g_errctx.sig[0], g_errctx.len[0]))) {
     janet_panicf("bad argument #%d (missing D-Bus type), expected %s, got %v",
-                 janet_type, x);
+                 g_errctx.argc, janet_type, x);
   }
 
   if (g_errctx.depth > 1) {
