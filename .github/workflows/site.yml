@@ -32,12 +32,15 @@ jobs:
         run: sudo apt install -y nodejs npm pandoc
 
       - name: Build site
-        run: npm run --prefix docs build
+        run: |
+          npm run --prefix docs build
+          mkdir _site
+          mv docs/index.html _site/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'docs/index.html'
+          path: '_site'
 
       - name: Deploy to GitHub Pages
         id: deployment
