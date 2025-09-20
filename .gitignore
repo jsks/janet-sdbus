@@ -4,3 +4,4 @@ project.org
 scratch.janet
 
 *.html
+!docs/assets/template.html
