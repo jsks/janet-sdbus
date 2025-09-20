@@ -1,0 +1,9 @@
+{
+  "type": "module",
+  "scripts": {
+    "build": "./build.sh"
+  },
+  "dependencies": {
+    "shiki": "^3.12.2"
+  }
+}

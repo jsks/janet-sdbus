@@ -2,3 +2,5 @@ build/
 jpm_tree/
 project.org
 scratch.janet
+
+*.html
