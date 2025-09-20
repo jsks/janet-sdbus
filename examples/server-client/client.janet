@@ -18,8 +18,8 @@
   (def store (as-> (sdbus/introspect bus "org.janet.example" "/org/janet/example") _
                     (sdbus/proxy bus _ :org.janet.example)))
   (def ch (ev/chan))
-  (:subscribe store :KeyAdded ch)
-  (:subscribe store :KeyRemoved ch)
+  (:signal/subscribe store :KeyAdded ch)
+  (:signal/subscribe store :KeyRemoved ch)
 
   (ev/spawn (signal-handler ch))
 

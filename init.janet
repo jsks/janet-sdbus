@@ -109,49 +109,50 @@
   (-> (call-method bus destination path "org.freedesktop.DBus.Introspectable" "Introspect")
       (parse-xml :destination destination :path path)))
 
-(defn- proxy-method [name method]
+(defn- proxy-method [state name method]
   (def sig (-> (map |(get $ :type) (get method :in)) (string/join)))
   (fn [self & args]
-    (let [bus (self :bus)
-          destination (self :destination)
-          path (self :path)
-          interface (self :interface)]
+    (let [bus (state :bus)
+          destination (state :destination)
+          path (state :path)
+          interface (state :interface)]
       (call-method bus destination path interface name sig ;args))))
 
-(defn- proxy-property [name property]
+(defn- proxy-property [state name property]
   (def sig (get property :type))
   (fn [self &opt value]
-    (let [bus (self :bus)
-          destination (self :destination)
-          path (self :path)
-          interface (self :interface)]
+    (let [bus (state :bus)
+          destination (state :destination)
+          path (state :path)
+          interface (state :interface)]
       (if (nil? value)
         (get (get-property bus destination path interface name) 1)
         (set-property bus destination path interface name [sig value])))))
 
-(defn- proxy-subscribe [self name &opt ch]
-  (default ch (ev/chan))
-  (var *slot* nil)
-  (let [bus (self :bus)
-        interface (self :interface)
-        path (self :path)
-        name (string name)]
-    (if (= name "PropertiesChanged")
-      (set *slot* (subscribe-properties-changed bus interface ch :path path))
-      (set *slot* (subscribe-signal bus name ch :path path :interface interface))))
-  (set ((self :subscriptions) name) *slot*)
-  ch)
+(defn- proxy-subscribe [state]
+  (fn [self name &opt ch]
+    (default ch (ev/chan))
+    (var *slot* nil)
+    (let [bus (state :bus)
+          interface (state :interface)
+          path (state :path)
+          name (string name)]
+      (if (= name "PropertiesChanged")
+        (set *slot* (subscribe-properties-changed bus interface ch :path path))
+        (set *slot* (subscribe-signal bus name ch :path path :interface interface))))
+    (set ((self :signal/subscriptions) name) *slot*)
+    ch))
 
 (defn- proxy-unsubscribe [self name]
-  (if-let [slot (get (self :subscriptions) name)]
-    (do (cancel slot) (set ((self :subscriptions) name) nil))
+  (if-let [slot (get (self :signal/subscriptions) name)]
+    (do (cancel slot) (set ((self :signal/subscriptions) name) nil))
     (errorf "unknown signal name: %s" name)))
 
-(defn- proxy-members [members]
+(defn- proxy-members [state members]
   (tabseq [[name member] :pairs members]
     name (case (member :kind)
-           'method (proxy-method (string name) member)
-           'property (proxy-property (string name) member)
+           'method (proxy-method state (string name) member)
+           'property (proxy-property state (string name) member)
            nil)))
 
 (defn proxy
@@ -183,17 +184,17 @@
 
   ```
   [bus spec interface]
-  (def obj @{:bus bus
-             :destination (spec :destination)
-             :path (spec :path)
-             :interface (string interface)
-             :subscriptions @{}
-             :subscribe proxy-subscribe
-             :unsubscribe proxy-unsubscribe})
+  (def state {:bus bus
+              :destination (spec :destination)
+              :path (spec :path)
+              :interface (string interface)})
+  (def obj @{:signal/subscriptions @{}
+             :signal/subscribe (proxy-subscribe state)
+             :signal/unsubscribe proxy-unsubscribe})
   (when (not (in (spec :interfaces) interface))
     (errorf "interface %s not found in spec" interface))
   (->> (get-in spec [:interfaces interface :members])
-       (proxy-members)
+       (proxy-members state)
        (merge-into obj)))
 
 (defn- normalized-read [msg]

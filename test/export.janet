@@ -91,7 +91,7 @@
 
 ###
 # Signals
-(def ch (:subscribe proxy :Signal))
+(def ch (:signal/subscribe proxy :Signal))
 
 (sdbus/emit-signal bus "/org/janet/UnitTests" "org.janet.UnitTests"
                    "Signal" "o" "/org/janet/UnitTests")
@@ -105,10 +105,10 @@
 (assert (= status :ok))
 (assert (= (sdbus/message-read msg) "/example/path"))
 
-(:unsubscribe proxy :Signal)
+(:signal/unsubscribe proxy :Signal)
 
 # PropertyChanged signal w/ value
-(:subscribe proxy :PropertiesChanged ch)
+(:signal/subscribe proxy :PropertiesChanged ch)
 
 (:MutableWithSignal proxy @["Gone"])
 (def [status msg] (ev/take ch))
@@ -137,13 +137,13 @@
 (assert (deep= (get payload 2) @["Invalidate"]))
 
 # We shouldn't receive additional signals after unsubscribing
-(:unsubscribe proxy :PropertiesChanged)
+(:signal/unsubscribe proxy :PropertiesChanged)
 (:MutableWithSignal proxy @["Missed"])
 
-(assert (empty? (proxy :subscriptions)))
+(assert (empty? (proxy :signal/subscriptions)))
 (assert (zero? (ev/count ch)))
 
-(assert-error "Unsubscribe from known signal" (:unsubscribe proxy :BogusSignal))
+(assert-error "Unsubscribe from known signal" (:signal/unsubscribe proxy :BogusSignal))
 
 ###
 # Matches
