@@ -169,6 +169,12 @@ As a convenience, `janet-sdbus` also provides the `sdbus/subscribe-properties-ch
 
 To emit a signal use `sdbus/emit-signal`.
 
+### Matching
+
+`sdbus/subscribe-signal` is a wrapper around the low-level function, `sdbus/match-async`, which offers generic matching of incoming D-Bus messages. `sdbus/match-async` matches D-Bus messages based on a user-provided string of match rules that must conform to the D-Bus specification on [match rules](https://dbus.freedesktop.org/doc/dbus-specification.html#message-bus-routing-match-rules).
+
+Similar to `sdbus/subscribe-signal`, `sdbus/match-async` returns a bus slot that may be passed to `sdbus/cancel` to remove the match. Events are returned via a user provided channel.
+
 ## Introspection
 
 `sdbus/introspect` queries `org.freedesktop.DBus.Introspectable` and returns a
