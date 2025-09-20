@@ -1,8 +1,11 @@
 (declare-project
   :name "sdbus"
   :author "jsks"
-  :description "sdbus bindings"
-  :version "0.1.0")
+  :description "Janet bindings to sd-bus"
+  :license "MIT"
+  :version "0.2.0"
+  :url "https://github.com/jsks/janet-sdbus"
+  :repo "git+https://github.com/jsks/janet-sdbus")
 
 ### Utility functions
 (defn run [& args]
