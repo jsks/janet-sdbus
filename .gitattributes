@@ -1,1 +1,2 @@
 vendor/* linguist-vendored
+docs/node_modules/* linguist-vendored
