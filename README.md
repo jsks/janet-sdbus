@@ -22,6 +22,8 @@ This project requires Janet `>=1.39.0`, libsystemd, and pkg-config.
 $ jpm install https://github.com/jsks/janet-sdbus
 ```
 
+Once installed, get started by checking out the [examples](https://github.com/jsks/janet-sdbus/tree/main/examples) or reading through the project [documentation](https://jsks.github.io/janet-sdbus).
+
 ### Development
 
 ```sh
