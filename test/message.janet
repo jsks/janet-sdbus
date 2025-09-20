@@ -63,6 +63,10 @@
 (test-basic "t" (int/u64 3444) :core/u64) # UInt64
 (test-basic "d" -10.2 :number)            # Double
 
+# 64-bit unsigned/signed integers should also accepts numbers
+(assert (= (from-message "x" 20) (int/s64 20)))
+(assert (= (from-message "t" 199920) (int/u64 199920)))
+
 (test-basic "s" "Hello World" :string)           # String
 (test-basic "o" "/org/freedesktop/DBus" :string) # Object path
 (test-basic "g" "s(ii)" :string)                 # Signature
@@ -70,6 +74,8 @@
 (assert-error "Invalid byte" (from-message "y" 999))
 (assert-error "Test invalid boolean" (from-message "b" 10))
 (assert-error "Decimal to integer" (from-message "i" 3.14))
+(assert-error "Decimal to unsigned 64 bit integer" (from-message "u" 1.1))
+(assert-error "Imprecise conversion" (from-message "x" 9007199254740993))
 (assert-error "Integer overflow" (from-message "n" 100000))
 (assert-error "Signed to unsigned" (from-message "u" -10))
 (assert-error "Invalid input to string" (from-message "s" 10))
