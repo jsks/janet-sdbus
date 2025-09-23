@@ -173,6 +173,17 @@ JANET_FN(cfun_bus_is_open, "(sdbus/bus-is-open? bus)",
   return janet_wrap_boolean(check);
 }
 
+JANET_FN(cfun_bus_can_send_fds, "(sdbus/can-send-fds? bus)",
+         "Check if a D-Bus connection supports sending and receiving file "
+         "descriptors.") {
+  janet_fixarity(argc, 1);
+
+  Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
+  int check = sd_bus_can_send(conn->bus, SD_BUS_TYPE_UNIX_FD);
+
+  return janet_wrap_boolean(check);
+}
+
 JANET_FN(cfun_get_unique_name, "(sdbus/get-unique-name bus)",
          "Get the unique name of a D-Bus connection.") {
   janet_fixarity(argc, 1);
@@ -192,7 +203,7 @@ JANET_FN(
     cfun_set_allow_interactive_authorization,
     "(sdbus/set-allow-interactive-authorization bus allow)",
     "Set whether to allow interactive authorization on a D-Bus connection. "
-    "Returns nil") {
+    "Returns nil.") {
   janet_fixarity(argc, 2);
 
   Conn *conn = janet_getabstract(argv, 0, &dbus_bus_type);
@@ -234,6 +245,7 @@ JanetRegExt cfuns_bus[] = {
   JANET_REG("open-system-remote", cfun_open_system_remote),
   JANET_REG("close-bus", cfun_close_bus),
   JANET_REG("bus-is-open?", cfun_bus_is_open),
+  JANET_REG("can-send-fds?", cfun_bus_can_send_fds),
   JANET_REG("get-unique-name", cfun_get_unique_name),
   JANET_REG("set-allow-interactive-authorization",
             cfun_set_allow_interactive_authorization),

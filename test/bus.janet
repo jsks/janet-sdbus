@@ -18,6 +18,10 @@
              sort))
 (assert (deep= names out))
 
+# Sanity check --- by default, local bus connections should support
+#  file descriptor sending/receiving
+(assert (sdbus/can-send-fds? bus))
+
 (sdbus/close-bus bus)
 
 (assert (not (sdbus/bus-is-open? bus)))
