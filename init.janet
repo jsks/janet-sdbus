@@ -4,6 +4,8 @@
 (import ./native :prefix "" :export true)
 (import ./introspect :prefix "" :export true)
 
+(setdyn :allow-interactive-authorization false)
+
 (defn call-method
   ```
   Send a method call to a D-Bus service. Suspends the current fiber
@@ -16,6 +18,8 @@
   [bus destination path interface method & rest]
   (def msg (message-new-method-call bus destination path interface method))
   (def signature (first rest))
+  (when (dyn :allow-interactive-authorization)
+    (message-allow-interactive-authorization msg))
   (unless (or (nil? signature) (empty? signature))
     (message-append msg signature ;(slice rest 1)))
   (with [ch (ev/chan)]
