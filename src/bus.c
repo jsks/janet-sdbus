@@ -93,6 +93,16 @@ static Janet dbus_bus_next(void *p, Janet key) {
   OPEN_BUS_CORE(CALL_SD_BUS_FUNC(fun, &conn->bus, arg))
 
 JANET_FN(
+    cfun_open_bus, "(sdbus/open-bus)",
+    "Open a D-Bus connection, system or user depending on who the current user is."
+    "The returned connection must be explicitly closed before program exit.") {
+  UNUSED(argv);
+  janet_fixarity(argc, 0);
+
+  OPEN_BUS0(sd_bus_open);
+}
+
+JANET_FN(
     cfun_open_user_bus, "(sdbus/open-user-bus)",
     "Open a user D-Bus connection. "
     "The returned connection must be explicitly closed before program exit.") {
@@ -227,6 +237,7 @@ JANET_FN(cfun_list_names, "(sdbus/list-names bus)",
 }
 
 JanetRegExt cfuns_bus[] = {
+  JANET_REG("open-bus", cfun_open_bus),
   JANET_REG("open-user-bus", cfun_open_user_bus),
   JANET_REG("open-system-bus", cfun_open_system_bus),
   JANET_REG("open-user-machine", cfun_open_user_machine),

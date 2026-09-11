@@ -601,6 +601,15 @@ JANET_FN(cfun_message_send, "(sdbus/message-send msg)", "Send a message.") {
   return janet_wrap_nil();
 }
 
+JANET_FN(cfun_message_allow_interactive_authorization, "(sdbus/message-allow-interactive-authorization msg)", "Set the `allow-interactive-authorization` flag on the message") {
+  janet_fixarity(argc, 1);
+
+  sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);
+  CALL_SD_BUS_FUNC(sd_bus_message_set_allow_interactive_authorization, *msg_ptr, 1);
+
+  return janet_wrap_nil();
+}
+
 #define MESSAGE_GET(target)                                                    \
   janet_fixarity(argc, 1);                                                     \
   sd_bus_message **msg_ptr = janet_getabstract(argv, 0, &dbus_message_type);   \
@@ -742,6 +751,7 @@ JanetRegExt cfuns_message[] = {
   JANET_REG("message-new-signal", cfun_message_new_signal),
   JANET_REG("message-new-method-error", cfun_message_new_method_error),
   JANET_REG("message-send", cfun_message_send),
+  JANET_REG("message-allow-interactive-authorization", cfun_message_allow_interactive_authorization),
   JANET_REG("message-get-destination", cfun_message_get_destination),
   JANET_REG("message-get-path", cfun_message_get_path),
   JANET_REG("message-get-interface", cfun_message_get_interface),
